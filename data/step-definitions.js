@@ -18,6 +18,15 @@
     { id: 6, order: 60, key: 'wait-registration-success', title: '等待注册成功', sourceId: 'chatgpt', driverId: null, command: 'wait-registration-success' },
   ];
 
+  const EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS = [
+    { id: 1, order: 10, key: 'open-chatgpt', title: '打开 ChatGPT 官网', sourceId: 'chatgpt', driverId: null, command: 'open-chatgpt' },
+    { id: 2, order: 20, key: 'submit-signup-email', title: '注册并输入邮箱', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'submit-signup-email' },
+    { id: 3, order: 30, key: 'fill-password', title: '填写密码并继续', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'fill-password' },
+    { id: 4, order: 40, key: 'fetch-signup-code', title: '获取注册验证码', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'submit-verification-code', mailRuleId: 'openai-signup-code' },
+    { id: 5, order: 50, key: 'fill-profile', title: '填写姓名和生日', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'fill-profile' },
+    { id: 6, order: 60, key: 'extract-access-token', title: '获取 Access Token', sourceId: 'chatgpt', driverId: null, command: 'extract-access-token' },
+  ];
+
   const PLUS_PAYPAL_PREFIX_STEP_DEFINITIONS = [
     { id: 1, order: 10, key: 'open-chatgpt', title: '打开 ChatGPT 官网', sourceId: 'chatgpt', driverId: null, command: 'open-chatgpt' },
     { id: 2, order: 20, key: 'submit-signup-email', title: '注册并输入邮箱', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'submit-signup-email' },
@@ -121,6 +130,10 @@
     return Boolean(options?.plusModeEnabled || options?.plusMode);
   }
 
+  function isEmailSignupOnlyModeEnabled(options = {}) {
+    return Boolean(options?.emailSignupOnlyModeEnabled || options?.emailSignupOnlyMode);
+  }
+
   function normalizePlusPaymentMethod(value = '') {
     const normalized = String(value || '').trim().toLowerCase();
     if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
@@ -145,6 +158,9 @@
   }
 
   function getResolvedSignupMethod(options = {}) {
+    if (isEmailSignupOnlyModeEnabled(options)) {
+      return SIGNUP_METHOD_EMAIL;
+    }
     return normalizeSignupMethod(options?.resolvedSignupMethod || options?.signupMethod);
   }
 
@@ -152,6 +168,9 @@
     const signupMethod = getResolvedSignupMethod(options);
     const reloginAfterBindEmail = signupMethod === SIGNUP_METHOD_PHONE
       && isPhoneSignupReloginAfterBindEmailEnabled(options);
+    if (isEmailSignupOnlyModeEnabled(options)) {
+      return EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS;
+    }
     if (!isPlusModeEnabled(options)) {
       if (signupMethod === SIGNUP_METHOD_PHONE) {
         return reloginAfterBindEmail
@@ -213,6 +232,7 @@
         const keyed = new Map();
         for (const step of [
           ...NORMAL_STEP_DEFINITIONS,
+          ...EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS,
           ...NORMAL_PHONE_STEP_DEFINITIONS,
           ...NORMAL_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS,
           ...PLUS_PAYPAL_STEP_DEFINITIONS,
@@ -400,6 +420,7 @@
     NORMAL_PHONE_STEP_DEFINITIONS,
     NORMAL_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS,
     PLUS_STEP_DEFINITIONS: PLUS_PAYPAL_STEP_DEFINITIONS,
+    EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS,
     PLUS_PAYPAL_STEP_DEFINITIONS,
     PLUS_PAYPAL_PHONE_STEP_DEFINITIONS,
     PLUS_PAYPAL_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS,
@@ -425,6 +446,7 @@
     getSteps,
     getWorkflow,
     hasFlow,
+    isEmailSignupOnlyModeEnabled,
     isPlusModeEnabled,
     normalizeActiveFlowId,
     normalizePlusPaymentMethod,

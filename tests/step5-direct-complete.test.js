@@ -72,6 +72,8 @@ function getStep5Bundle() {
     extractFunction('isSignupProfilePageUrl'),
     getStep5OutcomeBundle(),
     extractFunction('getStep5DirectCompletionPayload'),
+    extractFunction('isStep5PostSubmitHomeUrl'),
+    extractFunction('shouldStep5WaitForPostSubmitInContent'),
     extractFunction('isStep5AllConsentText'),
     extractFunction('findStep5AllConsentCheckbox'),
     extractFunction('isStep5CheckboxChecked'),
@@ -254,8 +256,11 @@ return {
     {
       profileSubmitted: true,
       postSubmitChecked: true,
+      postSubmitConfirmed: true,
       outcome: 'logged_in_home',
       url: 'https://chatgpt.com/',
+      postSubmitState: 'logged_in_home',
+      postSubmitUrl: 'https://chatgpt.com/',
     },
     '生日模式点击提交后应等待并确认页面结果'
   );
@@ -265,8 +270,11 @@ return {
       payload: {
         profileSubmitted: true,
         postSubmitChecked: true,
+        postSubmitConfirmed: true,
         outcome: 'logged_in_home',
         url: 'https://chatgpt.com/',
+        postSubmitState: 'logged_in_home',
+        postSubmitUrl: 'https://chatgpt.com/',
       },
     },
   ]);
@@ -804,9 +812,12 @@ return {
   assert.deepStrictEqual(result, {
     profileSubmitted: true,
     postSubmitChecked: true,
+    postSubmitConfirmed: true,
     ageMode: true,
     outcome: 'logged_in_home',
     url: 'https://chatgpt.com/',
+    postSubmitState: 'logged_in_home',
+    postSubmitUrl: 'https://chatgpt.com/',
   });
   assert.equal(snapshot.nameValue, 'Mia Harris');
   assert.equal(snapshot.ageValue, '19');
@@ -897,6 +908,90 @@ return {
   } finally {
     api.restore();
   }
+});
+
+test('step 5 can hand post-submit confirmation to background', async () => {
+  const api = new Function(`
+const nameInput = { value: '', hidden: false };
+const ageInput = { value: '', hidden: false };
+const completeButton = {
+  tagName: 'BUTTON',
+  textContent: '完成帐户创建',
+  hidden: false,
+  getAttribute() { return ''; },
+};
+const location = { href: 'https://auth.openai.com/u/signup/profile' };
+const document = {
+  querySelector(selector) {
+    switch (selector) {
+      case '[role="spinbutton"][data-type="year"]':
+      case '[role="spinbutton"][data-type="month"]':
+      case '[role="spinbutton"][data-type="day"]':
+      case 'input[name="birthday"]':
+        return null;
+      case 'input[name="age"]':
+        return ageInput;
+      case 'button[type="submit"], input[type="submit"]':
+      case 'button[type="submit"]':
+        return completeButton;
+      default:
+        return null;
+    }
+  },
+  querySelectorAll(selector) {
+    if (selector === 'input[name="allCheckboxes"][type="checkbox"]') return [];
+    if (selector === 'input[type="checkbox"]') return [];
+    if (selector === 'button, [role="button"], input[type="button"], input[type="submit"]') return [completeButton];
+    return [];
+  },
+  execCommand() {},
+};
+
+function log() {}
+function throwIfStopped() {}
+async function waitForElement() { return nameInput; }
+async function humanPause() {}
+async function sleep() {}
+function fillInput(input, value) { input.value = value; }
+function findBirthdayReactAriaSelect() { return null; }
+function isVisibleElement(el) { return Boolean(el) && !el.hidden; }
+function isActionEnabled(el) { return Boolean(el) && !el.disabled && el.getAttribute?.('aria-disabled') !== 'true'; }
+function getActionText(el) { return el.textContent || ''; }
+async function setReactAriaBirthdaySelect() {}
+async function waitForElementByText() { return completeButton; }
+function simulateClick() { location.href = 'https://auth.openai.com/authorize/resume'; }
+function reportComplete() { throw new Error('reportComplete should not run when background confirms post-submit'); }
+function normalizeInlineText(text) { return String(text || '').replace(/\\s+/g, ' ').trim(); }
+function getSignupAuthRetryPathPatterns() { return []; }
+function getAuthTimeoutErrorPageState() { return null; }
+async function recoverCurrentAuthRetryPage() { throw new Error('should not recover retry page'); }
+function createSignupUserAlreadyExistsError() { return new Error('user already exists'); }
+function createAuthMaxCheckAttemptsError() { return new Error('max_check_attempts'); }
+function getStep5ErrorText() { return ''; }
+function isStep5Ready() { return /^https:\\/\\/auth\\.openai\\.com\\//.test(location.href); }
+function isLikelyLoggedInChatgptHomeUrl() { return /^https:\\/\\/chatgpt\\.com\\//.test(location.href); }
+function isOAuthConsentPage() { return false; }
+function isAddPhonePageReady() { return false; }
+
+${getStep5Bundle()}
+
+return {
+  run() {
+    return step5_fillNameBirthday({
+      firstName: 'Mia',
+      lastName: 'Harris',
+      age: 19,
+      waitForPostSubmitInContent: false,
+    });
+  },
+};
+`)();
+
+  assert.deepStrictEqual(await api.run(), {
+    submitted: true,
+    pendingPostSubmitConfirmation: true,
+    postSubmitUrl: 'https://auth.openai.com/authorize/resume',
+  });
 });
 
 test('step 5 recovers auth retry page after profile submit', async () => {

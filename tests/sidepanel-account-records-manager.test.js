@@ -130,6 +130,7 @@ async function flushPromises() {
 
 test('sidepanel html contains account records overlay and manager script', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
+  const sidepanelJs = fs.readFileSync('sidepanel/sidepanel.js', 'utf8');
   const managerIndex = html.indexOf('<script src="account-records-manager.js"></script>');
   const sidepanelIndex = html.indexOf('<script src="sidepanel.js"></script>');
 
@@ -148,6 +149,8 @@ test('sidepanel html contains account records overlay and manager script', () =>
   assert.match(html, /id="paypal-account-picker"/);
   assert.match(html, /id="cf-domain-picker"/);
   assert.match(html, /id="temp-email-domain-picker"/);
+  assert.match(sidepanelJs, /data-email-signup-only-login-token/);
+  assert.match(sidepanelJs, /LOGIN_EMAIL_SIGNUP_ONLY_ACCOUNT_FOR_TOKEN/);
   assert.notEqual(managerIndex, -1);
   assert.notEqual(sidepanelIndex, -1);
   assert.ok(managerIndex < sidepanelIndex);

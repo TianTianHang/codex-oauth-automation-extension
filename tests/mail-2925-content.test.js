@@ -668,6 +668,11 @@ return { extractVerificationCode };
 
 test('openMailAndGetMessageText always returns to inbox after opening a 2925 message', async () => {
   const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('isMailItemNode'),
+    extractFunction('extractStrictChatGPTVerificationCode'),
+    extractFunction('isLikelyMailDetailNode'),
+    extractFunction('getMailDetailTextFromPage'),
     extractFunction('returnToInbox'),
     extractFunction('openMailAndGetMessageText'),
   ].join('\n');
@@ -692,6 +697,10 @@ function findMailItems() {
 
 function findInboxLink() {
   return { kind: 'inbox' };
+}
+
+function isVisibleNode(node) {
+  return Boolean(node) && !node.hidden;
 }
 
 function simulateClick(node) {
@@ -735,6 +744,11 @@ return {
 
 test('openMailAndDeleteAfterRead deletes the opened message before returning to inbox', async () => {
   const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('isMailItemNode'),
+    extractFunction('extractStrictChatGPTVerificationCode'),
+    extractFunction('isLikelyMailDetailNode'),
+    extractFunction('getMailDetailTextFromPage'),
     extractFunction('deleteCurrentMailboxEmail'),
     extractFunction('returnToInbox'),
     extractFunction('openMailAndDeleteAfterRead'),
@@ -767,6 +781,10 @@ function findInboxLink() {
   return { kind: 'inbox' };
 }
 
+function isVisibleNode(node) {
+  return Boolean(node) && !node.hidden;
+}
+
 function simulateClick(node) {
   if (node === mailItem) {
     calls.push('mail');
@@ -790,6 +808,9 @@ async function waitForMailboxReady() {
 }
 const console = { warn() {} };
 const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
+function isVisibleNode(node) {
+  return Boolean(node) && !node.hidden;
+}
 
 ${bundle}
 
@@ -805,6 +826,110 @@ return {
   const text = await api.openMailAndDeleteAfterRead(api.mailItem, 8);
 
   assert.match(text, /778899/);
+  assert.deepEqual(api.getCalls(), ['mail', 'delete', 'inbox']);
+});
+
+test('openMailAndDeleteAfterRead reads detail text instead of stale list preview code', async () => {
+  const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('isMailItemNode'),
+    extractFunction('extractStrictChatGPTVerificationCode'),
+    extractFunction('isLikelyMailDetailNode'),
+    extractFunction('getMailDetailTextFromPage'),
+    extractFunction('deleteCurrentMailboxEmail'),
+    extractFunction('returnToInbox'),
+    extractFunction('openMailAndDeleteAfterRead'),
+  ].join('\n');
+
+  const api = new Function(`
+const calls = [];
+const mailItem = { kind: 'mail', closest(selector) { return selector.includes('mail') ? this : null; } };
+const deleteButton = { kind: 'delete' };
+const inboxLink = { kind: 'inbox' };
+let listVisible = true;
+let detailVisible = false;
+
+const listNode = {
+  hidden: false,
+  className: 'mail-item',
+  textContent: 'OpenAI verification code 111111',
+  innerText: 'OpenAI verification code 111111',
+  closest(selector) { return selector.includes('mail') ? this : null; },
+  getBoundingClientRect() { return { width: 320, height: 32, top: 20, left: 0 }; },
+};
+const detailNode = {
+  hidden: false,
+  className: 'mail-detail',
+  textContent: 'Your ChatGPT code is 222222',
+  innerText: 'Your ChatGPT code is 222222',
+  closest() { return null; },
+  getBoundingClientRect() { return { width: 640, height: 300, top: 80, left: 300 }; },
+};
+
+const document = {
+  body: {
+    get textContent() {
+      return 'OpenAI verification code 111111 Your ChatGPT code is 222222';
+    },
+  },
+  querySelectorAll(selector) {
+    if (selector.includes('mail-detail') || selector.includes('MailDetail') || selector === 'article' || selector === 'main') {
+      return detailVisible ? [detailNode] : [];
+    }
+    return [];
+  },
+};
+
+const window = {
+  getComputedStyle() { return { display: 'block', visibility: 'visible' }; },
+};
+
+function findMailItems() {
+  return listVisible ? [mailItem] : [];
+}
+
+function findDeleteButton() {
+  return deleteButton;
+}
+
+function findInboxLink() {
+  return inboxLink;
+}
+
+function simulateClick(node) {
+  if (node === mailItem) {
+    calls.push('mail');
+    listVisible = false;
+    detailVisible = true;
+    return;
+  }
+  if (node === deleteButton) {
+    calls.push('delete');
+    return;
+  }
+  calls.push('inbox');
+  listVisible = true;
+  detailVisible = false;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+const console = { warn() {} };
+const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
+
+${bundle}
+
+return {
+  mailItem,
+  openMailAndDeleteAfterRead,
+  getCalls() { return calls.slice(); },
+};
+`)();
+
+  const text = await api.openMailAndDeleteAfterRead(api.mailItem, 4);
+
+  assert.match(text, /222222/);
+  assert.doesNotMatch(text, /111111/);
   assert.deepEqual(api.getCalls(), ['mail', 'delete', 'inbox']);
 });
 

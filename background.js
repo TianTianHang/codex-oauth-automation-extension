@@ -133,11 +133,15 @@ const PLUS_GPC_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS = self.MultiPageStepDe
   signupMethod: 'phone',
   phoneSignupReloginAfterBindEmailEnabled: true,
 }) || PLUS_GPC_PHONE_STEP_DEFINITIONS;
+const EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS = self.MultiPageStepDefinitions?.getSteps?.({
+  emailSignupOnlyModeEnabled: true,
+}) || NORMAL_STEP_DEFINITIONS.slice(0, 5);
 const PLUS_STEP_DEFINITIONS = PLUS_PAYPAL_STEP_DEFINITIONS;
 const ALL_STEP_DEFINITIONS = self.MultiPageStepDefinitions?.getAllSteps?.({
   activeFlowId: DEFAULT_ACTIVE_FLOW_ID,
 }) || [
   ...NORMAL_STEP_DEFINITIONS,
+  ...EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS,
   ...NORMAL_PHONE_STEP_DEFINITIONS,
   ...NORMAL_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS,
   ...PLUS_PAYPAL_STEP_DEFINITIONS,
@@ -175,9 +179,14 @@ const PLUS_GPC_STEP_IDS = PLUS_GPC_STEP_DEFINITIONS
   .map((definition) => Number(definition?.id))
   .filter(Number.isFinite)
   .sort((left, right) => left - right);
+const EMAIL_SIGNUP_ONLY_STEP_IDS = EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS
+  .map((definition) => Number(definition?.id))
+  .filter(Number.isFinite)
+  .sort((left, right) => left - right);
 const PLUS_STEP_IDS = PLUS_PAYPAL_STEP_IDS;
 const LAST_STEP_ID = Math.max(
   NORMAL_STEP_IDS[NORMAL_STEP_IDS.length - 1] || 10,
+  EMAIL_SIGNUP_ONLY_STEP_IDS[EMAIL_SIGNUP_ONLY_STEP_IDS.length - 1] || 5,
   PLUS_PAYPAL_STEP_IDS[PLUS_PAYPAL_STEP_IDS.length - 1] || 10,
   PLUS_GOPAY_STEP_IDS[PLUS_GOPAY_STEP_IDS.length - 1] || 10,
   PLUS_GPC_STEP_IDS[PLUS_GPC_STEP_IDS.length - 1] || 10
@@ -665,7 +674,14 @@ function resolveContributionModeRoutingState(state = {}) {
 }
 
 function getSignupMethodForStepDefinitions(state = {}) {
+  if (isEmailSignupOnlyModeState(state)) {
+    return SIGNUP_METHOD_EMAIL;
+  }
   return normalizeSignupMethod(state?.resolvedSignupMethod || state?.signupMethod);
+}
+
+function isEmailSignupOnlyModeState(state = {}) {
+  return Boolean(state?.emailSignupOnlyModeEnabled || state?.emailSignupOnlyMode);
 }
 
 function getStepDefinitionsForState(state = {}) {
@@ -675,6 +691,7 @@ function getStepDefinitionsForState(state = {}) {
     const activeFlowId = String(state?.activeFlowId || '').trim().toLowerCase() || defaultFlowId;
     const definitions = rootScope.MultiPageStepDefinitions.getSteps({
       activeFlowId,
+      emailSignupOnlyModeEnabled: isEmailSignupOnlyModeState(state),
       plusModeEnabled: isPlusModeState(state),
       plusPaymentMethod: normalizePlusPaymentMethod(state?.plusPaymentMethod),
       signupMethod: getSignupMethodForStepDefinitions(state),
@@ -687,6 +704,9 @@ function getStepDefinitionsForState(state = {}) {
   const activeFlowId = String(state?.activeFlowId || '').trim().toLowerCase();
   if (activeFlowId && activeFlowId !== DEFAULT_ACTIVE_FLOW_ID) {
     return [];
+  }
+  if (isEmailSignupOnlyModeState(state)) {
+    return EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS;
   }
   if (!isPlusModeState(state)) {
     return NORMAL_STEP_DEFINITIONS;
@@ -705,6 +725,9 @@ function getStepIdsForState(state = {}) {
       .map((definition) => Number(definition?.id))
       .filter(Number.isFinite)
       .sort((left, right) => left - right);
+  }
+  if (isEmailSignupOnlyModeState(state)) {
+    return EMAIL_SIGNUP_ONLY_STEP_IDS;
   }
   if (!isPlusModeState(state)) {
     return NORMAL_STEP_IDS;
@@ -884,6 +907,8 @@ const PERSISTED_SETTING_DEFAULTS = {
   codex2apiUrl: DEFAULT_CODEX2API_URL,
   codex2apiAdminKey: '',
   customPassword: '',
+  emailSignupOnlyModeEnabled: false,
+  emailSignupOnlyAccounts: [],
   plusModeEnabled: false,
   plusPaymentMethod: DEFAULT_PLUS_PAYMENT_METHOD,
   paypalEmail: '',
@@ -1598,10 +1623,14 @@ function canUsePhoneSignup(state = {}) {
   }
   return Boolean(state?.phoneVerificationEnabled)
     && !Boolean(state?.plusModeEnabled)
+    && !Boolean(state?.emailSignupOnlyModeEnabled)
     && !Boolean(state?.contributionMode);
 }
 
 function resolveSignupMethod(state = {}) {
+  if (isEmailSignupOnlyModeState(state)) {
+    return SIGNUP_METHOD_EMAIL;
+  }
   const frozenMethod = String(state?.resolvedSignupMethod || '').trim().toLowerCase();
   if (frozenMethod === SIGNUP_METHOD_EMAIL || frozenMethod === SIGNUP_METHOD_PHONE) {
     return normalizeSignupMethod(frozenMethod);
@@ -2326,6 +2355,333 @@ async function markCurrentRegistrationAccountUsed(state = {}, options = {}) {
   return { updated };
 }
 
+async function readEmailSignupOnlyAccessToken(state = {}) {
+  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
+  const tabId = Number(tab?.id);
+  if (!Number.isInteger(tabId)) {
+    throw new Error('打开 ChatGPT 会话页失败。');
+  }
+  try {
+    await waitForTabCompleteUntilStopped(tabId);
+    await sleepWithStop(1000);
+    await ensureContentScriptReadyOnTabUntilStopped('plus-checkout', tabId, {
+      inject: ['content/utils.js', 'content/plus-checkout.js'],
+      injectSource: 'plus-checkout',
+      logMessage: '仅邮箱注册：正在等待 ChatGPT 会话页加载以读取 Access Token...',
+    });
+    const sessionResult = await sendTabMessageUntilStopped(tabId, 'plus-checkout', {
+      type: 'PLUS_CHECKOUT_GET_STATE',
+      source: 'background',
+      payload: {
+        includeSession: true,
+        includeAccessToken: true,
+      },
+    });
+    if (sessionResult?.error) {
+      throw new Error(sessionResult.error);
+    }
+    return String(sessionResult?.accessToken || sessionResult?.session?.accessToken || '').trim();
+  } finally {
+    await chrome.tabs.remove(tabId).catch(() => {});
+  }
+}
+
+async function appendEmailSignupOnlyAccount(state = {}, options = {}) {
+  const currentState = await getState();
+  const latestState = {
+    ...(state && typeof state === 'object' ? state : {}),
+    ...(currentState && typeof currentState === 'object' ? currentState : {}),
+  };
+  const email = String(latestState.email || latestState.accountIdentifier || '').trim().toLowerCase();
+  const password = String(latestState.password || latestState.customPassword || '').trim();
+  if (!email) {
+    await addLog('仅邮箱注册：缺少邮箱，无法保存账号。', 'warn');
+    return null;
+  }
+  if (!password) {
+    await addLog('仅邮箱注册：本轮未设置密码，将保存为空密码并继续尝试提取 Access Token。', 'warn');
+  }
+
+  const accessToken = String(options.accessToken || latestState.emailSignupOnlyAccessToken || '').trim();
+
+  const accounts = normalizeEmailSignupOnlyAccounts(latestState.emailSignupOnlyAccounts || []);
+  const now = Date.now();
+  const existingIndex = accounts.findIndex((account) => account.email === email);
+  let account;
+  if (existingIndex >= 0) {
+    account = {
+      ...accounts[existingIndex],
+      password,
+      accessToken,
+      mailProvider: String(latestState.mailProvider || '').trim().toLowerCase() || accounts[existingIndex].mailProvider || null,
+      updatedAt: now,
+      source: 'auto',
+    };
+    accounts[existingIndex] = account;
+  } else {
+    account = normalizeEmailSignupOnlyAccount({
+      id: crypto.randomUUID(),
+      email,
+      password,
+      accessToken,
+      mailProvider: latestState.mailProvider,
+      createdAt: now,
+      updatedAt: now,
+      source: 'auto',
+    });
+    accounts.push(account);
+  }
+
+  await setPersistentSettings({ emailSignupOnlyAccounts: accounts });
+  await setState({ emailSignupOnlyAccounts: accounts, emailSignupOnlyAccessToken: accessToken });
+  broadcastDataUpdate({ emailSignupOnlyAccounts: accounts, emailSignupOnlyAccessToken: accessToken });
+  await addLog(`仅邮箱注册：已保存账号 ${email}${accessToken ? ' 和 Access Token' : ''}。`, 'ok');
+  return account;
+}
+
+async function updateEmailSignupOnlyAccountAccessToken(accountId = '', accessToken = '') {
+  const normalizedAccountId = String(accountId || '').trim();
+  const token = String(accessToken || '').trim();
+  if (!normalizedAccountId) {
+    throw new Error('缺少仅注册账号 ID。');
+  }
+  if (!token) {
+    throw new Error('未获取到可用 Access Token。');
+  }
+
+  const state = await getState();
+  const accounts = normalizeEmailSignupOnlyAccounts(state.emailSignupOnlyAccounts || []);
+  const index = accounts.findIndex((account) => String(account.id || '') === normalizedAccountId);
+  if (index < 0) {
+    throw new Error('未找到仅注册账号记录。');
+  }
+
+  accounts[index] = {
+    ...accounts[index],
+    accessToken: token,
+    updatedAt: Date.now(),
+  };
+
+  await setPersistentSettings({ emailSignupOnlyAccounts: accounts });
+  await setState({ emailSignupOnlyAccounts: accounts, emailSignupOnlyAccessToken: token });
+  broadcastDataUpdate({ emailSignupOnlyAccounts: accounts, emailSignupOnlyAccessToken: token });
+  await addLog(`仅邮箱注册：账号 ${accounts[index].email} 的 Access Token 已更新。`, 'ok');
+  return accounts[index];
+}
+
+async function submitEmailSignupOnlyLoginCode(code = '') {
+  const signupTabId = await getTabId('signup-page');
+  if (!signupTabId) {
+    throw new Error('仅注册账号登录页已关闭，无法填写登录验证码。');
+  }
+  await chrome.tabs.update(signupTabId, { active: true });
+  const result = await sendToContentScriptResilient('signup-page', {
+    type: 'EMAIL_SIGNUP_ONLY_SUBMIT_LOGIN_CODE',
+    source: 'background',
+    payload: {
+      code,
+    },
+  }, {
+    timeoutMs: 60000,
+    responseTimeoutMs: 45000,
+    retryDelayMs: 700,
+    logMessage: '仅注册账号登录页正在切换，等待页面重新就绪后继续确认验证码提交结果...',
+  });
+  if (result?.error) {
+    throw new Error(result.error);
+  }
+  return result || {};
+}
+
+async function fetchAndSubmitEmailSignupOnlyLoginCode(state = {}, options = {}) {
+  const mail = getMailConfig(state);
+  if (mail.error) throw new Error(mail.error);
+  if (mail.provider === 'custom') {
+    throw new Error('当前仅注册账号登录获取 Token 暂不支持自定义邮箱手动验证码。');
+  }
+
+  const startedAt = Date.now();
+  if (mail.source === 'icloud-mail' && typeof ensureIcloudMailSession === 'function') {
+    await addLog('仅注册账号：正在确认 iCloud 邮箱登录态...', 'info');
+    await ensureIcloudMailSession({
+      state,
+      step: 8,
+      actionLabel: '仅注册账号：确认 iCloud 邮箱登录态',
+    });
+  }
+
+  if (
+    mail.provider === HOTMAIL_PROVIDER
+    || mail.provider === LUCKMAIL_PROVIDER
+    || mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER
+  ) {
+    await addLog(`仅注册账号：正在通过 ${mail.label} 轮询登录验证码...`, 'info');
+  } else {
+    await addLog(`仅注册账号：正在打开${mail.label}读取登录验证码...`, 'info');
+    if (mail.provider === '2925' && typeof ensureMail2925MailboxSession === 'function') {
+      await ensureMail2925MailboxSession({
+        accountId: state.currentMail2925AccountId || null,
+        forceRelogin: false,
+        allowLoginWhenOnLoginPage: Boolean(state?.mail2925UseAccountPool),
+        expectedMailboxEmail: String(state?.mail2925BaseEmail || '').trim().toLowerCase(),
+        actionLabel: 'Email signup only: ensure 2925 mailbox session',
+      });
+    } else if (mail.source && mail.url) {
+      const alive = await isTabAlive(mail.source);
+      if (alive && !mail.navigateOnReuse) {
+        const tabId = await getTabId(mail.source);
+        await chrome.tabs.update(tabId, { active: true });
+      } else {
+        await reuseOrCreateTab(mail.source, mail.url, {
+          inject: mail.inject,
+          injectSource: mail.injectSource,
+        });
+      }
+    }
+  }
+
+  const rejectedCodes = new Set();
+  const maxAttempts = mail.provider === LUCKMAIL_PROVIDER ? 3 : 8;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    throwIfStopped();
+    const result = await pollFreshVerificationCode(8, state, mail, {
+      excludeCodes: Array.from(rejectedCodes),
+      filterAfterTimestamp: options.filterAfterTimestamp ?? startedAt,
+      maxResendRequests: attempt === 1 ? 1 : 0,
+      resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER ? 15000 : 0,
+      targetEmail: String(state.email || '').trim().toLowerCase(),
+    });
+    const code = String(result?.code || '').trim();
+    if (!code) {
+      throw new Error('仅注册账号：邮箱轮询结束，但未获取到登录验证码。');
+    }
+    await addLog(`仅注册账号：已获取登录验证码：${code}`, 'info');
+    const submitResult = await submitEmailSignupOnlyLoginCode(code);
+    if (submitResult.invalidCode) {
+      rejectedCodes.add(code);
+      await addLog(`仅注册账号：登录验证码被页面拒绝：${submitResult.errorText || code}`, 'warn');
+      continue;
+    }
+    if (submitResult.addPhonePage) {
+      throw new Error('仅注册账号：登录后进入手机号验证页，无法继续获取 Token。');
+    }
+    return submitResult;
+  }
+
+  throw new Error(`仅注册账号：登录验证码连续失败，已达到 ${maxAttempts} 次重试上限。`);
+}
+
+async function loginEmailSignupOnlyAccountForToken(accountId = '') {
+  const normalizedAccountId = String(accountId || '').trim();
+  if (!normalizedAccountId) {
+    throw new Error('缺少仅注册账号 ID。');
+  }
+
+  const state = await getState();
+  const accounts = normalizeEmailSignupOnlyAccounts(state.emailSignupOnlyAccounts || []);
+  const account = accounts.find((item) => String(item.id || '') === normalizedAccountId);
+  if (!account) {
+    throw new Error('未找到仅注册账号记录。');
+  }
+  if (String(account.accessToken || '').trim()) {
+    throw new Error('该账号已经保存 Token。');
+  }
+  if (!account.email) {
+    throw new Error('该账号缺少邮箱，无法登录。');
+  }
+  if (!account.password) {
+    throw new Error('该账号缺少密码，无法登录。');
+  }
+
+  await addLog(`仅邮箱注册：正在登录 ${account.email} 获取 Access Token...`, 'info');
+  const flowState = {
+    ...state,
+    email: account.email,
+    accountIdentifierType: 'email',
+    accountIdentifier: account.email,
+    password: account.password,
+    customPassword: account.password,
+  };
+  await setState({
+    email: account.email,
+    accountIdentifierType: 'email',
+    accountIdentifier: account.email,
+    password: account.password,
+    customPassword: account.password,
+    loginVerificationRequestedAt: null,
+  });
+  await runPreStep6CookieCleanup();
+
+  const tabId = await reuseOrCreateTab('signup-page', 'https://chatgpt.com/log-in', {
+    forceNew: true,
+    inject: SIGNUP_PAGE_INJECT_FILES,
+    injectSource: 'signup-page',
+  });
+  await ensureContentScriptReadyOnTab('signup-page', tabId, {
+    inject: SIGNUP_PAGE_INJECT_FILES,
+    injectSource: 'signup-page',
+    timeoutMs: 45000,
+    retryDelayMs: 900,
+    logMessage: '仅注册账号登录页仍在加载，正在重试连接内容脚本...',
+  });
+  const loginResult = await sendToContentScriptResilient('signup-page', {
+    type: 'EMAIL_SIGNUP_ONLY_LOGIN_FOR_TOKEN',
+    source: 'background',
+    payload: {
+      email: account.email,
+      password: account.password,
+      visibleStep: 0,
+    },
+  }, {
+    timeoutMs: 180000,
+    responseTimeoutMs: 180000,
+    retryDelayMs: 700,
+    logMessage: '仅注册账号登录页正在切换，等待页面重新就绪...',
+  });
+  if (loginResult?.error) {
+    throw new Error(loginResult.error);
+  }
+
+  if (loginResult?.loginComplete) {
+    await addLog('仅邮箱注册：账号已完成 ChatGPT 登录，准备读取 Access Token。', 'ok');
+  } else if (loginResult?.state === 'verification_page') {
+    await fetchAndSubmitEmailSignupOnlyLoginCode(flowState, {
+      filterAfterTimestamp: Number(loginResult?.loginVerificationRequestedAt) || Date.now(),
+    });
+  } else {
+    throw new Error(`仅邮箱注册：登录页未进入可处理状态（${loginResult?.state || 'unknown'}）。URL: ${loginResult?.url || ''}`);
+  }
+
+  const accessToken = await readEmailSignupOnlyAccessToken(await getState());
+  const updatedAccount = await updateEmailSignupOnlyAccountAccessToken(normalizedAccountId, accessToken);
+  await addLog(`仅邮箱注册：${account.email} 登录获取 Access Token 完成。`, 'ok');
+  return updatedAccount;
+}
+
+async function executeExtractAccessTokenStep(state = {}) {
+  const step5Status = state?.stepStatuses?.[5] || '';
+  if (!isStepDoneStatus(step5Status)) {
+    throw new Error(`步骤 6：步骤 5 尚未完成（当前状态：${step5Status || 'pending'}），请等待注册资料提交确认后再获取 Access Token。`);
+  }
+
+  let accessToken = '';
+  try {
+    await addLog('仅邮箱注册：正在获取 Access Token...', 'info', { step: 6, stepKey: 'extract-access-token' });
+    accessToken = await readEmailSignupOnlyAccessToken(state);
+    if (accessToken) {
+      await addLog('仅邮箱注册：已提取 Access Token。', 'ok', { step: 6, stepKey: 'extract-access-token' });
+    } else {
+      await addLog('仅邮箱注册：ChatGPT 会话未返回 Access Token，账号将先保存为空 token。', 'warn', { step: 6, stepKey: 'extract-access-token' });
+    }
+  } catch (error) {
+    await addLog(`仅邮箱注册：提取 Access Token 失败：${getErrorMessage(error)}`, 'warn', { step: 6, stepKey: 'extract-access-token' });
+  }
+
+  const latestState = await getState();
+  await appendEmailSignupOnlyAccount({ ...latestState, emailSignupOnlyAccessToken: accessToken }, { accessToken });
+  await completeStepFromBackground(6, { emailSignupOnlyAccessToken: accessToken });
+}
+
 function getCustomEmailPoolEmailForRun(state = {}, targetRun = 1) {
   const entries = getCustomEmailPool(state);
   const numericRun = Math.max(1, Math.floor(Number(targetRun) || 1));
@@ -2631,6 +2987,42 @@ function normalizeSub2ApiAccountPriority(value, fallback = DEFAULT_SUB2API_ACCOU
   return numeric;
 }
 
+function normalizeEmailSignupOnlyAccount(account = {}) {
+  const now = Date.now();
+  const email = String(account?.email || '').trim().toLowerCase();
+  const password = String(account?.password || '');
+  const accessToken = String(account?.accessToken || account?.token || '').trim();
+  const mailProvider = String(account?.mailProvider || '').trim().toLowerCase();
+  return {
+    id: String(account?.id || ''),
+    email,
+    password,
+    accessToken,
+    mailProvider: mailProvider || null,
+    createdAt: Number.isFinite(Number(account?.createdAt)) ? Number(account.createdAt) : now,
+    updatedAt: Number.isFinite(Number(account?.updatedAt)) ? Number(account.updatedAt) : now,
+    source: String(account?.source || '').trim().toLowerCase() === 'manual' ? 'manual' : 'auto',
+  };
+}
+
+function normalizeEmailSignupOnlyAccounts(accounts) {
+  if (!Array.isArray(accounts)) return [];
+  const normalizedAccounts = [];
+  const seenEmails = new Set();
+  for (const account of accounts) {
+    const normalized = normalizeEmailSignupOnlyAccount(account);
+    if (!normalized.email || seenEmails.has(normalized.email)) {
+      continue;
+    }
+    if (!normalized.id) {
+      normalized.id = crypto.randomUUID();
+    }
+    seenEmails.add(normalized.email);
+    normalizedAccounts.push(normalized);
+  }
+  return normalizedAccounts;
+}
+
 function normalizePersistentSettingValue(key, value) {
   switch (key) {
     case 'panelMode':
@@ -2725,6 +3117,10 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '').trim();
     case 'customPassword':
       return String(value || '');
+    case 'emailSignupOnlyModeEnabled':
+      return Boolean(value);
+    case 'emailSignupOnlyAccounts':
+      return normalizeEmailSignupOnlyAccounts(value);
     case 'signupMethod':
       return normalizeSignupMethod(value);
     case 'plusPaymentMethod':
@@ -3120,8 +3516,15 @@ function buildPersistentSettingsPayload(input = {}, options = {}) {
     ...payload,
     resolvedSignupMethod: null,
   };
+  if (payload.emailSignupOnlyModeEnabled) {
+    payload.plusModeEnabled = false;
+    payload.signupMethod = SIGNUP_METHOD_EMAIL;
+    nextSignupConstraintState.plusModeEnabled = false;
+    nextSignupConstraintState.signupMethod = SIGNUP_METHOD_EMAIL;
+  }
   if (Object.prototype.hasOwnProperty.call(payload, 'phoneVerificationEnabled')
     || Object.prototype.hasOwnProperty.call(payload, 'plusModeEnabled')
+    || Object.prototype.hasOwnProperty.call(payload, 'emailSignupOnlyModeEnabled')
     || Object.prototype.hasOwnProperty.call(payload, 'signupMethod')
     || Object.prototype.hasOwnProperty.call(payload, 'panelMode')
     || Object.prototype.hasOwnProperty.call(payload, 'activeFlowId')) {
@@ -9894,8 +10297,21 @@ async function reportCompletedStepSideEffectError(step, error) {
 async function runCompletedNodeSideEffects(nodeId, payload, completionState, lastNodeId) {
   await handleNodeData(nodeId, payload);
   if (nodeId === lastNodeId) {
+    if (isEmailSignupOnlyModeState(completionState)) {
+      await finalizeEmailSignupOnlyCompletion(completionState, { saveAccount: false });
+    }
     await appendAndBroadcastAccountRunRecord('success', completionState);
   }
+}
+
+async function finalizeEmailSignupOnlyCompletion(state = {}, options = {}) {
+  if (options.saveAccount !== false) {
+    await appendEmailSignupOnlyAccount(state, options);
+  }
+  await markCurrentRegistrationAccountUsed(state, {
+    logPrefix: '仅邮箱注册完成',
+    level: 'ok',
+  });
 }
 
 async function reportCompletedNodeSideEffectError(nodeId, error) {
@@ -12316,9 +12732,12 @@ const step4Executor = self.MultiPageBackgroundStep4?.createStep4Executor({
 });
 const step5Executor = self.MultiPageBackgroundStep5?.createStep5Executor({
   addLog,
+  completeStepFromBackground,
   generateRandomBirthday,
   generateRandomName,
+  getTabId,
   sendToContentScript,
+  waitForTabUrlMatch,
 });
 const step6Executor = self.MultiPageBackgroundStep6?.createStep6Executor({
   addLog,
@@ -12531,6 +12950,9 @@ const stepExecutorsByKey = {
   'fetch-signup-code': (state) => step4Executor.executeStep4(state),
   'fill-profile': (state) => step5Executor.executeStep5(state),
   'wait-registration-success': (state) => step6Executor.executeStep6(state),
+  'extract-access-token': (state) => executeExtractAccessTokenStep(state),
+  'clear-login-cookies': () => step6Executor.executeStep6(),
+  'wait-registration-success': (state) => step6Executor.executeStep6(state),
   'plus-checkout-create': (state) => plusCheckoutCreateExecutor.executePlusCheckoutCreate(state),
   'plus-checkout-billing': (state) => plusCheckoutBillingExecutor.executePlusCheckoutBilling(state),
   'gopay-subscription-confirm': (state) => goPayManualConfirmExecutor.executeGoPayManualConfirm(state),
@@ -12606,6 +13028,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   getStepDefinitionForState,
   getStepIdsForState,
   getLastStepIdForState,
+  loginEmailSignupOnlyAccountForToken,
   normalizeSignupMethod,
   canUsePhoneSignup,
   resolveSignupMethod,
@@ -12733,11 +13156,15 @@ const plusGoPayPhoneBoundEmailReloginStepRegistry = buildStepRegistry(PLUS_GOPAY
 const plusGpcStepRegistry = buildStepRegistry(PLUS_GPC_STEP_DEFINITIONS);
 const plusGpcPhoneStepRegistry = buildStepRegistry(PLUS_GPC_PHONE_STEP_DEFINITIONS);
 const plusGpcPhoneBoundEmailReloginStepRegistry = buildStepRegistry(PLUS_GPC_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS);
+const emailSignupOnlyStepRegistry = buildStepRegistry(EMAIL_SIGNUP_ONLY_STEP_DEFINITIONS);
 
 function getStepRegistryForState(state = {}) {
   const activeFlowId = String(state?.activeFlowId || DEFAULT_ACTIVE_FLOW_ID).trim().toLowerCase() || DEFAULT_ACTIVE_FLOW_ID;
   if (activeFlowId !== DEFAULT_ACTIVE_FLOW_ID) {
     throw new Error(`当前尚未注册 flow=${activeFlowId} 的步骤执行器。`);
+  }
+  if (isEmailSignupOnlyModeState(state)) {
+    return emailSignupOnlyStepRegistry;
   }
   const signupMethod = getSignupMethodForStepDefinitions(state);
   const useBoundEmailRelogin = signupMethod === SIGNUP_METHOD_PHONE

@@ -171,6 +171,8 @@ const inputCodex2ApiAdminKey = document.getElementById('input-codex2api-admin-ke
 const rowCustomPassword = document.getElementById('row-custom-password');
 const rowPlusMode = document.getElementById('row-plus-mode');
 const inputPlusModeEnabled = document.getElementById('input-plus-mode-enabled');
+const rowEmailSignupOnlyMode = document.getElementById('row-email-signup-only-mode');
+const inputEmailSignupOnlyModeEnabled = document.getElementById('input-email-signup-only-mode-enabled');
 const rowPlusPaymentMethod = document.getElementById('row-plus-payment-method');
 const selectPlusPaymentMethod = document.getElementById('select-plus-payment-method');
 const btnGpcCardKeyPurchase = document.getElementById('btn-gpc-card-key-purchase');
@@ -302,6 +304,12 @@ const btnIcloudBulkUnused = document.getElementById('btn-icloud-bulk-unused');
 const btnIcloudBulkPreserve = document.getElementById('btn-icloud-bulk-preserve');
 const btnIcloudBulkUnpreserve = document.getElementById('btn-icloud-bulk-unpreserve');
 const btnIcloudBulkDelete = document.getElementById('btn-icloud-bulk-delete');
+const emailSignupOnlyAccountsSection = document.getElementById('email-signup-only-accounts-section');
+const emailSignupOnlyAccountsSummary = document.getElementById('email-signup-only-accounts-summary');
+const emailSignupOnlyAccountsList = document.getElementById('email-signup-only-accounts-list');
+const btnExportEmailSignupOnlyTokens = document.getElementById('btn-export-email-signup-only-tokens');
+const btnExportEmailSignupOnlyCredentials = document.getElementById('btn-export-email-signup-only-credentials');
+const btnClearEmailSignupOnlyAccounts = document.getElementById('btn-clear-email-signup-only-accounts');
 const rowHotmailServiceMode = document.getElementById('row-hotmail-service-mode');
 const hotmailServiceModeButtons = Array.from(document.querySelectorAll('[data-hotmail-service-mode]'));
 const rowHotmailRemoteBaseUrl = document.getElementById('row-hotmail-remote-base-url');
@@ -813,6 +821,9 @@ function initPhoneVerificationSectionExpandedState() {
 
 function getStepDefinitionsForMode(plusModeEnabled = false, options = {}) {
   const defaultFlowId = typeof DEFAULT_ACTIVE_FLOW_ID !== 'undefined' ? DEFAULT_ACTIVE_FLOW_ID : 'openai';
+  const emailSignupOnlyModeEnabled = typeof options === 'object' && options
+    ? Boolean(options.emailSignupOnlyModeEnabled)
+    : false;
   const defaultMethod = typeof DEFAULT_PLUS_PAYMENT_METHOD !== 'undefined' ? DEFAULT_PLUS_PAYMENT_METHOD : 'paypal';
   const rawPaymentMethod = typeof options === 'string'
     ? options
@@ -828,6 +839,7 @@ function getStepDefinitionsForMode(plusModeEnabled = false, options = {}) {
     : (options.activeFlowId || (typeof latestState !== 'undefined' ? latestState?.activeFlowId : '') || defaultFlowId);
   return (window.MultiPageStepDefinitions?.getSteps?.({
     activeFlowId: String(activeFlowId || '').trim().toLowerCase() || defaultFlowId,
+    emailSignupOnlyModeEnabled,
     plusModeEnabled,
     plusPaymentMethod: normalizePlusPaymentMethod(rawPaymentMethod),
     signupMethod: normalizeSignupMethod(rawSignupMethod),
@@ -914,6 +926,9 @@ function getStepIdByNodeIdForCurrentMode(nodeId = '') {
 }
 
 function rebuildStepDefinitionState(plusModeEnabled = false, options = {}) {
+  const emailSignupOnlyModeEnabled = typeof options === 'object' && options
+    ? Boolean(options.emailSignupOnlyModeEnabled)
+    : false;
   currentPlusModeEnabled = Boolean(plusModeEnabled);
   const defaultMethod = typeof DEFAULT_PLUS_PAYMENT_METHOD !== 'undefined' ? DEFAULT_PLUS_PAYMENT_METHOD : 'paypal';
   const rawPaymentMethod = typeof options === 'string'
@@ -930,6 +945,7 @@ function rebuildStepDefinitionState(plusModeEnabled = false, options = {}) {
   currentPhoneSignupReloginAfterBindEmailEnabled = phoneSignupReloginAfterBindEmailEnabled;
   stepDefinitions = getStepDefinitionsForMode(currentPlusModeEnabled, {
     activeFlowId: options?.activeFlowId,
+    emailSignupOnlyModeEnabled,
     plusPaymentMethod: currentPlusPaymentMethod,
     signupMethod: currentSignupMethod,
     phoneSignupReloginAfterBindEmailEnabled: currentPhoneSignupReloginAfterBindEmailEnabled,
@@ -2259,6 +2275,81 @@ function downloadTextFile(content, fileName, mimeType = 'application/json;charse
   setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
+function getEmailSignupOnlyAccounts() {
+  return Array.isArray(latestState?.emailSignupOnlyAccounts) ? latestState.emailSignupOnlyAccounts : [];
+}
+
+function formatEmailSignupOnlyDate(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value <= 0) return '--';
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
+function renderEmailSignupOnlyAccounts() {
+  const accounts = getEmailSignupOnlyAccounts();
+  const tokenCount = accounts.filter((account) => String(account.accessToken || '').trim()).length;
+  if (emailSignupOnlyAccountsSummary) {
+    emailSignupOnlyAccountsSummary.textContent = accounts.length
+      ? `${accounts.length} 个账号，${tokenCount} 个 Token`
+      : '暂无保存账号';
+  }
+  if (btnExportEmailSignupOnlyTokens) btnExportEmailSignupOnlyTokens.disabled = tokenCount === 0;
+  if (btnExportEmailSignupOnlyCredentials) btnExportEmailSignupOnlyCredentials.disabled = accounts.length === 0;
+  if (btnClearEmailSignupOnlyAccounts) btnClearEmailSignupOnlyAccounts.disabled = accounts.length === 0;
+  if (!emailSignupOnlyAccountsList) return;
+  if (!accounts.length) {
+    emailSignupOnlyAccountsList.innerHTML = '<div class="hotmail-empty">暂无仅注册账号。</div>';
+    return;
+  }
+  emailSignupOnlyAccountsList.innerHTML = accounts.map((account) => {
+    const token = String(account.accessToken || '').trim();
+    const tokenLabel = token ? `${token.slice(0, 10)}...${token.slice(-6)}` : '未提取';
+    return `
+      <div class="email-signup-only-account-item">
+        <div class="email-signup-only-account-main">
+          <span class="email-signup-only-email mono">${escapeHtml(account.email || '(未知)')}</span>
+          <span class="icloud-tag${token ? ' icloud-tag-primary' : ''}">${escapeHtml(token ? 'Token 已保存' : '无 Token')}</span>
+        </div>
+        <div class="email-signup-only-account-meta mono">
+          <span>密码：${'*'.repeat(Math.min(String(account.password || '').length, 12))}</span>
+          <span>Token：${escapeHtml(tokenLabel)}</span>
+          <span>${escapeHtml(formatEmailSignupOnlyDate(account.updatedAt || account.createdAt))}</span>
+        </div>
+        <div class="email-signup-only-account-actions">
+          <button class="btn btn-ghost btn-xs" type="button" data-email-signup-only-copy="email" data-account-id="${escapeHtml(account.id)}">复制邮箱</button>
+          <button class="btn btn-ghost btn-xs" type="button" data-email-signup-only-copy="password" data-account-id="${escapeHtml(account.id)}">复制密码</button>
+          <button class="btn btn-ghost btn-xs" type="button" data-email-signup-only-copy="accessToken" data-account-id="${escapeHtml(account.id)}"${token ? '' : ' disabled'}>复制 Token</button>
+          ${token ? '' : `<button class="btn btn-primary btn-xs" type="button" data-email-signup-only-login-token data-account-id="${escapeHtml(account.id)}">登录获取 Token</button>`}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function exportEmailSignupOnlyTokens() {
+  const tokens = getEmailSignupOnlyAccounts()
+    .map((account) => String(account.accessToken || '').trim())
+    .filter(Boolean);
+  if (!tokens.length) {
+    showToast('没有可导出的 Token。', 'warn');
+    return;
+  }
+  downloadTextFile(tokens.join('\n'), `email-signup-only-tokens-${Date.now()}.txt`, 'text/plain;charset=utf-8');
+  showToast(`已导出 ${tokens.length} 个 Token。`, 'success');
+}
+
+function exportEmailSignupOnlyCredentials() {
+  const lines = getEmailSignupOnlyAccounts()
+    .filter((account) => account.email && account.password)
+    .map((account) => `${account.email}----${account.password}`);
+  if (!lines.length) {
+    showToast('没有可导出的账号密码。', 'warn');
+    return;
+  }
+  downloadTextFile(lines.join('\n'), `email-signup-only-credentials-${Date.now()}.txt`, 'text/plain;charset=utf-8');
+  showToast(`已导出 ${lines.length} 组账号密码。`, 'success');
+}
+
 function isDoneStatus(status) {
   return status === 'completed' || status === 'manual_completed' || status === 'skipped';
 }
@@ -2346,6 +2437,9 @@ function syncLatestState(nextState) {
   };
 
   renderAccountRecords(latestState);
+  if (typeof renderEmailSignupOnlyAccounts === 'function') {
+    renderEmailSignupOnlyAccounts();
+  }
 }
 
 let accountRunHistoryRefreshTimer = null;
@@ -3738,6 +3832,9 @@ function collectSettingsPayload() {
   const rawPlusModeEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
     ? Boolean(inputPlusModeEnabled.checked)
     : Boolean(latestState?.plusModeEnabled);
+  const emailSignupOnlyModeEnabled = typeof inputEmailSignupOnlyModeEnabled !== 'undefined' && inputEmailSignupOnlyModeEnabled
+    ? Boolean(inputEmailSignupOnlyModeEnabled.checked)
+    : Boolean(latestState?.emailSignupOnlyModeEnabled);
   const rawPhoneVerificationEnabled = Boolean(inputPhoneVerificationEnabled?.checked);
   const capabilityState = typeof resolveCurrentSidepanelCapabilities === 'function'
     ? resolveCurrentSidepanelCapabilities({
@@ -3747,6 +3844,7 @@ function collectSettingsPayload() {
         ...(latestState || {}),
         panelMode: rawPanelMode,
         plusModeEnabled: rawPlusModeEnabled,
+        emailSignupOnlyModeEnabled,
         phoneVerificationEnabled: rawPhoneVerificationEnabled,
         signupMethod: selectedSignupMethod,
       },
@@ -3772,7 +3870,9 @@ function collectSettingsPayload() {
         : null;
     })();
   const effectivePanelMode = capabilityState?.effectivePanelMode || capabilityState?.panelMode || rawPanelMode;
-  const effectivePlusModeEnabled = capabilityState
+  const effectivePlusModeEnabled = emailSignupOnlyModeEnabled
+    ? false
+    : capabilityState
     ? Boolean(capabilityState.runtimeLocks?.plusModeEnabled)
     : rawPlusModeEnabled;
   const effectivePhoneVerificationEnabled = capabilityState
@@ -3874,6 +3974,7 @@ function collectSettingsPayload() {
     ipProxyRegion: currentIpProxyServiceProfile.region,
     codex2apiUrl: inputCodex2ApiUrl.value.trim(),
     codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
+    emailSignupOnlyModeEnabled,
     plusModeEnabled: effectivePlusModeEnabled,
     plusPaymentMethod,
     paypalEmail: String(currentPayPalAccount?.email || latestState?.paypalEmail || '').trim(),
@@ -7824,6 +7925,9 @@ function setSignupMethod(method) {
 
 function canSelectPhoneSignupMethod() {
   const phoneEnabled = Boolean(inputPhoneVerificationEnabled?.checked);
+  const emailSignupOnlyModeEnabled = typeof inputEmailSignupOnlyModeEnabled !== 'undefined' && inputEmailSignupOnlyModeEnabled
+    ? Boolean(inputEmailSignupOnlyModeEnabled.checked)
+    : Boolean(latestState?.emailSignupOnlyModeEnabled);
   const plusModeEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
     ? Boolean(inputPlusModeEnabled.checked)
     : Boolean(latestState?.plusModeEnabled);
@@ -7857,9 +7961,9 @@ function canSelectPhoneSignupMethod() {
         : null;
     })();
   if (capabilityState && typeof capabilityState.canSelectPhoneSignup === 'boolean') {
-    return capabilityState.canSelectPhoneSignup;
+    return capabilityState.canSelectPhoneSignup && !emailSignupOnlyModeEnabled;
   }
-  return phoneEnabled && !plusModeEnabled && !contributionModeEnabled;
+  return phoneEnabled && !plusModeEnabled && !emailSignupOnlyModeEnabled && !contributionModeEnabled;
 }
 
 function isSignupMethodSwitchLocked() {
@@ -7875,11 +7979,16 @@ function updateSignupMethodUI(options = {}) {
   }
 
   const showSignupMethod = Boolean(inputPhoneVerificationEnabled?.checked);
+  const emailSignupOnlyModeEnabled = typeof inputEmailSignupOnlyModeEnabled !== 'undefined' && inputEmailSignupOnlyModeEnabled
+    ? Boolean(inputEmailSignupOnlyModeEnabled.checked)
+    : Boolean(latestState?.emailSignupOnlyModeEnabled);
   if (rowSignupMethod) {
     rowSignupMethod.style.display = showSignupMethod ? '' : 'none';
   }
 
-  let selectedMethod = normalizeSignupMethod(getSelectedSignupMethod());
+  let selectedMethod = emailSignupOnlyModeEnabled
+    ? SIGNUP_METHOD_EMAIL
+    : normalizeSignupMethod(getSelectedSignupMethod());
   const phoneSelectable = canSelectPhoneSignupMethod();
   if (!phoneSelectable && selectedMethod === SIGNUP_METHOD_PHONE) {
     selectedMethod = setSignupMethod(SIGNUP_METHOD_EMAIL);
@@ -7899,6 +8008,8 @@ function updateSignupMethodUI(options = {}) {
     if (method === SIGNUP_METHOD_PHONE) {
       if (!Boolean(inputPhoneVerificationEnabled?.checked)) {
         button.title = '开启接码后可选择手机号注册';
+      } else if (emailSignupOnlyModeEnabled) {
+        button.title = '仅邮箱注册模式固定使用邮箱注册';
       } else if (typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled?.checked) {
         button.title = 'Plus 模式第一版暂不支持手机号注册';
       } else if (latestState?.contributionMode) {
@@ -7917,6 +8028,7 @@ function updateSignupMethodUI(options = {}) {
         ? Boolean(inputPlusModeEnabled.checked)
         : Boolean(latestState?.plusModeEnabled),
       signupMethod: selectedMethod,
+      emailSignupOnlyModeEnabled,
     }, {
       signupMethod: selectedMethod,
     })
@@ -7927,8 +8039,10 @@ function updateSignupMethodUI(options = {}) {
       signupMethod: selectedMethod,
     };
   syncStepDefinitionsForMode(stepDefinitionState.plusModeEnabled, {
+    activeFlowId: latestState?.activeFlowId,
     plusPaymentMethod: getSelectedPlusPaymentMethod(latestState),
-    signupMethod: selectedMethod,
+    signupMethod: stepDefinitionState.signupMethod || selectedMethod,
+    emailSignupOnlyModeEnabled,
     phoneSignupReloginAfterBindEmailEnabled: typeof inputPhoneSignupReloginAfterBindEmail !== 'undefined' && inputPhoneSignupReloginAfterBindEmail
       ? Boolean(inputPhoneSignupReloginAfterBindEmail.checked)
       : currentPhoneSignupReloginAfterBindEmailEnabled,
@@ -8188,12 +8302,16 @@ function updatePlusModeUI() {
   const rawEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
     ? Boolean(inputPlusModeEnabled.checked)
     : false;
+  const emailSignupOnlyModeEnabled = typeof inputEmailSignupOnlyModeEnabled !== 'undefined' && inputEmailSignupOnlyModeEnabled
+    ? Boolean(inputEmailSignupOnlyModeEnabled.checked)
+    : Boolean(latestState?.emailSignupOnlyModeEnabled);
   const capabilityState = typeof resolveCurrentSidepanelCapabilities === 'function'
     ? resolveCurrentSidepanelCapabilities({
       panelMode: typeof getSelectedPanelMode === 'function' ? getSelectedPanelMode() : latestState?.panelMode,
       state: {
         ...(latestState || {}),
         plusModeEnabled: rawEnabled,
+        emailSignupOnlyModeEnabled,
       },
     })
     : (() => {
@@ -8208,6 +8326,7 @@ function updatePlusModeUI() {
           state: {
             ...(latestState || {}),
             plusModeEnabled: rawEnabled,
+            emailSignupOnlyModeEnabled,
           },
         })
         : null;
@@ -8215,7 +8334,16 @@ function updatePlusModeUI() {
   const supportsPlusMode = capabilityState
     ? Boolean(capabilityState.canShowPlusSettings)
     : true;
-  const enabled = supportsPlusMode && rawEnabled;
+  const enabled = !emailSignupOnlyModeEnabled && supportsPlusMode && rawEnabled;
+  if (emailSignupOnlyModeEnabled && inputPlusModeEnabled) {
+    inputPlusModeEnabled.checked = false;
+  }
+  if (inputPlusModeEnabled) {
+    inputPlusModeEnabled.disabled = emailSignupOnlyModeEnabled || !supportsPlusMode;
+  }
+  if (typeof rowPlusMode !== 'undefined' && rowPlusMode) {
+    rowPlusMode.classList.toggle('is-disabled', emailSignupOnlyModeEnabled || !supportsPlusMode);
+  }
   const method = enabled ? getSelectedPlusPaymentMethod() : defaultMethod;
   const gpcPhoneMode = normalizeGpcHelperPhoneModeValue(
     typeof selectGpcHelperPhoneMode !== 'undefined' && selectGpcHelperPhoneMode
@@ -9054,14 +9182,17 @@ function renderStepsList() {
 
 function syncStepDefinitionsForMode(plusModeEnabled = false, plusPaymentMethodOrOptions = {}, maybeOptions = {}) {
   const defaultFlowId = typeof DEFAULT_ACTIVE_FLOW_ID !== 'undefined' ? DEFAULT_ACTIVE_FLOW_ID : 'openai';
-  const nextPlusModeEnabled = Boolean(plusModeEnabled);
   const options = typeof plusPaymentMethodOrOptions === 'string'
     ? maybeOptions
     : (plusPaymentMethodOrOptions || {});
+  const nextEmailSignupOnlyModeEnabled = Boolean(options.emailSignupOnlyModeEnabled);
+  const nextPlusModeEnabled = !nextEmailSignupOnlyModeEnabled && Boolean(plusModeEnabled);
   const rawPaymentMethod = typeof plusPaymentMethodOrOptions === 'string'
     ? plusPaymentMethodOrOptions
     : (options.plusPaymentMethod || getSelectedPlusPaymentMethod(latestState));
-  const nextSignupMethod = normalizeSignupMethod(options.signupMethod || currentSignupMethod || DEFAULT_SIGNUP_METHOD);
+  const nextSignupMethod = nextEmailSignupOnlyModeEnabled
+    ? SIGNUP_METHOD_EMAIL
+    : normalizeSignupMethod(options.signupMethod || currentSignupMethod || DEFAULT_SIGNUP_METHOD);
   const nextPhoneSignupReloginAfterBindEmailEnabled = Boolean(
     options.phoneSignupReloginAfterBindEmailEnabled
       ?? (typeof inputPhoneSignupReloginAfterBindEmail !== 'undefined' && inputPhoneSignupReloginAfterBindEmail
@@ -9086,6 +9217,7 @@ function syncStepDefinitionsForMode(plusModeEnabled = false, plusPaymentMethodOr
   const paymentTitleChanged = Boolean(nextPlusModeEnabled && currentPaymentStep && nextPaymentTitle && currentPaymentStep.title !== nextPaymentTitle);
   const shouldRender = Boolean(options.render)
     || nextPlusModeEnabled !== currentPlusModeEnabled
+    || nextEmailSignupOnlyModeEnabled !== Boolean(latestState?.emailSignupOnlyModeEnabled)
     || nextPaymentMethod !== currentPlusPaymentMethod
     || nextSignupMethod !== currentSignupMethod
     || nextPhoneSignupReloginAfterBindEmailEnabled !== currentPhoneSignupReloginAfterBindEmailEnabled
@@ -9096,6 +9228,7 @@ function syncStepDefinitionsForMode(plusModeEnabled = false, plusPaymentMethodOr
 
   rebuildStepDefinitionState(nextPlusModeEnabled, {
     activeFlowId: nextActiveFlowId,
+    emailSignupOnlyModeEnabled: nextEmailSignupOnlyModeEnabled,
     plusPaymentMethod: nextPaymentMethod,
     signupMethod: nextSignupMethod,
     phoneSignupReloginAfterBindEmailEnabled: nextPhoneSignupReloginAfterBindEmailEnabled,
@@ -9121,6 +9254,7 @@ function applySettingsState(state) {
       activeFlowId: state?.flowId || state?.activeFlowId,
       plusPaymentMethod: state?.plusPaymentMethod,
       signupMethod: stepDefinitionState.signupMethod,
+      emailSignupOnlyModeEnabled: Boolean(state?.emailSignupOnlyModeEnabled),
       phoneSignupReloginAfterBindEmailEnabled: Boolean(state?.phoneSignupReloginAfterBindEmailEnabled),
     });
   }
@@ -9184,6 +9318,12 @@ function applySettingsState(state) {
   syncPasswordField(state || {});
   if (typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled) {
     inputPlusModeEnabled.checked = Boolean(state?.plusModeEnabled);
+  }
+  if (typeof inputEmailSignupOnlyModeEnabled !== 'undefined' && inputEmailSignupOnlyModeEnabled) {
+    inputEmailSignupOnlyModeEnabled.checked = Boolean(state?.emailSignupOnlyModeEnabled);
+    if (inputEmailSignupOnlyModeEnabled.checked && inputPlusModeEnabled) {
+      inputPlusModeEnabled.checked = false;
+    }
   }
   if (typeof selectPlusPaymentMethod !== 'undefined' && selectPlusPaymentMethod) {
     selectPlusPaymentMethod.value = normalizePlusPaymentMethod(state?.plusPaymentMethod);
@@ -11725,6 +11865,86 @@ async function copyTextToClipboard(text) {
   await navigator.clipboard.writeText(value);
 }
 
+emailSignupOnlyAccountsList?.addEventListener('click', async (event) => {
+  const loginTokenButton = event.target?.closest?.('[data-email-signup-only-login-token]');
+  if (loginTokenButton) {
+    const accountId = String(loginTokenButton.dataset.accountId || '').trim();
+    if (!accountId) {
+      showToast('未找到账号记录。', 'error');
+      return;
+    }
+    if (!(await maybeTakeoverAutoRun('登录仅注册账号获取 Token'))) {
+      return;
+    }
+    loginTokenButton.disabled = true;
+    const originalText = loginTokenButton.textContent;
+    loginTokenButton.textContent = '登录中...';
+    try {
+      await persistCurrentSettingsForAction();
+      const response = await chrome.runtime.sendMessage({
+        type: 'LOGIN_EMAIL_SIGNUP_ONLY_ACCOUNT_FOR_TOKEN',
+        source: 'sidepanel',
+        payload: { accountId },
+      });
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+      if (Array.isArray(response?.emailSignupOnlyAccounts)) {
+        syncLatestState({ emailSignupOnlyAccounts: response.emailSignupOnlyAccounts });
+        renderEmailSignupOnlyAccounts();
+      }
+      showToast('Token 已获取并保存。', 'success', 2200);
+    } catch (error) {
+      showToast(error?.message || '登录获取 Token 失败。', 'error');
+    } finally {
+      loginTokenButton.disabled = false;
+      loginTokenButton.textContent = originalText || '登录获取 Token';
+    }
+    return;
+  }
+
+  const button = event.target?.closest?.('[data-email-signup-only-copy]');
+  if (!button) return;
+  const accountId = String(button.dataset.accountId || '').trim();
+  const key = String(button.dataset.emailSignupOnlyCopy || '').trim();
+  const account = getEmailSignupOnlyAccounts().find((item) => String(item.id || '') === accountId);
+  if (!account) {
+    showToast('未找到账号记录。', 'error');
+    return;
+  }
+  try {
+    await copyTextToClipboard(account[key] || '');
+    showToast('已复制。', 'success', 1200);
+  } catch (error) {
+    showToast(error?.message || '复制失败。', 'error');
+  }
+});
+
+btnExportEmailSignupOnlyTokens?.addEventListener('click', exportEmailSignupOnlyTokens);
+btnExportEmailSignupOnlyCredentials?.addEventListener('click', exportEmailSignupOnlyCredentials);
+btnClearEmailSignupOnlyAccounts?.addEventListener('click', async () => {
+  const accounts = getEmailSignupOnlyAccounts();
+  if (!accounts.length) {
+    showToast('没有可清空的仅注册账号。', 'warn');
+    return;
+  }
+  const confirmed = await openConfirmModal({
+    title: '清空仅注册账号',
+    message: `确认删除全部 ${accounts.length} 个仅注册账号吗？`,
+    confirmLabel: '确认清空',
+    confirmVariant: 'btn-danger',
+  });
+  if (!confirmed) return;
+  const response = await chrome.runtime.sendMessage({ type: 'CLEAR_EMAIL_SIGNUP_ONLY_ACCOUNTS', source: 'sidepanel' });
+  if (response?.error) {
+    showToast(response.error, 'error');
+    return;
+  }
+  syncLatestState({ emailSignupOnlyAccounts: [] });
+  renderEmailSignupOnlyAccounts();
+  showToast('已清空仅注册账号。', 'success');
+});
+
 const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
   state: {
     getLatestState: () => latestState,
@@ -12960,6 +13180,10 @@ inputPassword.addEventListener('blur', () => {
 });
 
 inputPlusModeEnabled?.addEventListener('change', () => {
+  if (inputPlusModeEnabled.checked && inputEmailSignupOnlyModeEnabled) {
+    inputEmailSignupOnlyModeEnabled.checked = false;
+    syncLatestState({ emailSignupOnlyModeEnabled: false });
+  }
   updatePlusModeUI();
   updateSignupMethodUI({ notify: true });
   const stepDefinitionState = typeof resolveStepDefinitionCapabilityState === 'function'
@@ -12977,6 +13201,30 @@ inputPlusModeEnabled?.addEventListener('change', () => {
   syncStepDefinitionsForMode(stepDefinitionState.plusModeEnabled, getSelectedPlusPaymentMethod(), {
     render: true,
     signupMethod: stepDefinitionState.signupMethod,
+    emailSignupOnlyModeEnabled: false,
+  });
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputEmailSignupOnlyModeEnabled?.addEventListener('change', () => {
+  if (inputEmailSignupOnlyModeEnabled.checked && inputPlusModeEnabled) {
+    inputPlusModeEnabled.checked = false;
+  }
+  if (inputEmailSignupOnlyModeEnabled.checked && typeof setSignupMethod === 'function') {
+    setSignupMethod(SIGNUP_METHOD_EMAIL);
+  }
+  syncLatestState({
+    emailSignupOnlyModeEnabled: Boolean(inputEmailSignupOnlyModeEnabled.checked),
+    plusModeEnabled: false,
+    signupMethod: SIGNUP_METHOD_EMAIL,
+  });
+  updatePlusModeUI();
+  updateSignupMethodUI({ notify: true });
+  syncStepDefinitionsForMode(false, {
+    render: true,
+    emailSignupOnlyModeEnabled: Boolean(inputEmailSignupOnlyModeEnabled.checked),
+    signupMethod: SIGNUP_METHOD_EMAIL,
   });
   markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
@@ -15106,6 +15354,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       if (message.payload.plusModeEnabled !== undefined && inputPlusModeEnabled) {
         inputPlusModeEnabled.checked = Boolean(message.payload.plusModeEnabled);
+      }
+      if (message.payload.emailSignupOnlyModeEnabled !== undefined && inputEmailSignupOnlyModeEnabled) {
+        inputEmailSignupOnlyModeEnabled.checked = Boolean(message.payload.emailSignupOnlyModeEnabled);
       }
       if (message.payload.plusPaymentMethod !== undefined && selectPlusPaymentMethod) {
         selectPlusPaymentMethod.value = normalizePlusPaymentMethod(message.payload.plusPaymentMethod);

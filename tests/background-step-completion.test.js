@@ -66,6 +66,15 @@ async function getState() {
 function getLastNodeIdForState() {
   return lastNodeId;
 }
+function isEmailSignupOnlyModeState(state = {}) {
+  return Boolean(state?.emailSignupOnlyModeEnabled);
+}
+async function appendEmailSignupOnlyAccount(state) {
+  events.push({ type: 'email-signup-account', state });
+}
+async function markCurrentRegistrationAccountUsed(state, options) {
+  events.push({ type: 'mark-used', state, options });
+}
 async function setNodeStatus(nodeId, status) {
   events.push({ type: 'status', nodeId, status });
 }
@@ -90,6 +99,7 @@ async function appendAndBroadcastAccountRunRecord(status, state) {
   events.push({ type: 'record', status, state });
 }
 ${extractFunction('runCompletedNodeSideEffects')}
+${extractFunction('finalizeEmailSignupOnlyCompletion')}
 ${extractFunction('reportCompletedNodeSideEffectError')}
 ${extractFunction('completeNodeFromBackground')}
 return { completeNodeFromBackground };

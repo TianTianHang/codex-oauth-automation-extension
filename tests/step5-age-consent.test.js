@@ -55,6 +55,7 @@ function getStep5Bundle() {
   return [
     extractFunction('getStep5DirectCompletionPayload'),
     extractFunction('isSignupProfilePageUrl'),
+    extractFunction('shouldStep5WaitForPostSubmitInContent'),
     extractFunction('isStep5AllConsentText'),
     extractFunction('findStep5AllConsentCheckbox'),
     extractFunction('isStep5CheckboxChecked'),
@@ -193,6 +194,8 @@ function simulateClick(el) {
   clicks.push(el.textContent || el.tagName || 'element');
   if (el === allConsentLabel || el === allConsentCheckbox) {
     allConsentCheckbox.checked = true;
+  } else if (el === completeButton) {
+    location.href = 'https://chatgpt.com/';
   }
   if (el === completeButton) {
     location.href = 'https://chatgpt.com/';
@@ -247,9 +250,12 @@ return {
   assert.deepStrictEqual(result, {
     profileSubmitted: true,
     postSubmitChecked: true,
+    postSubmitConfirmed: true,
     ageMode: true,
     outcome: 'logged_in_home',
     url: 'https://chatgpt.com/',
+    postSubmitState: 'logged_in_home',
+    postSubmitUrl: 'https://chatgpt.com/',
   });
   assert.equal(snapshot.nameValue, 'Mia Harris');
   assert.equal(snapshot.ageValue, '19');
@@ -264,9 +270,12 @@ return {
       payload: {
         profileSubmitted: true,
         postSubmitChecked: true,
+        postSubmitConfirmed: true,
         ageMode: true,
         outcome: 'logged_in_home',
         url: 'https://chatgpt.com/',
+        postSubmitState: 'logged_in_home',
+        postSubmitUrl: 'https://chatgpt.com/',
       },
     },
   ]);

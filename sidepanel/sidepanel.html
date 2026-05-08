@@ -264,6 +264,20 @@
           <span class="setting-caption">Plus 订阅链路</span>
         </div>
       </div>
+      <div class="data-row" id="row-email-signup-only-mode">
+        <span class="data-label">仅邮箱注册</span>
+        <div class="data-inline setting-pair">
+          <div class="setting-group setting-group-primary">
+            <label class="toggle-switch" for="input-email-signup-only-mode-enabled" title="注册完成后保存账号和 Token，不进行 OAuth">
+              <input type="checkbox" id="input-email-signup-only-mode-enabled" />
+              <span class="toggle-switch-track" aria-hidden="true">
+                <span class="toggle-switch-thumb"></span>
+              </span>
+            </label>
+          </div>
+          <span class="setting-caption">注册后停止并保存</span>
+        </div>
+      </div>
       <div class="data-row" id="row-plus-payment-method" style="display:none;">
         <span class="data-label">Plus 支付</span>
         <div class="data-inline">
@@ -1671,6 +1685,21 @@
       <span id="steps-progress" class="steps-progress">0 / 9</span>
     </div>
     <div class="steps-list"></div>
+  </section>
+
+  <section id="email-signup-only-accounts-section" class="data-card email-signup-only-card">
+    <div class="section-mini-header">
+      <div class="section-mini-copy">
+        <span class="section-label">仅注册账号</span>
+        <span id="email-signup-only-accounts-summary" class="data-value">暂无保存账号</span>
+      </div>
+      <div class="section-mini-actions">
+        <button id="btn-export-email-signup-only-tokens" class="btn btn-outline btn-xs" type="button">导出 Token</button>
+        <button id="btn-export-email-signup-only-credentials" class="btn btn-outline btn-xs" type="button">导出账号密码</button>
+        <button id="btn-clear-email-signup-only-accounts" class="btn btn-ghost btn-xs" type="button">清空</button>
+      </div>
+    </div>
+    <div id="email-signup-only-accounts-list" class="email-signup-only-accounts-list"></div>
   </section>
 
   <section id="log-section">

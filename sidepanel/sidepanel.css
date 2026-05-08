@@ -3501,3 +3501,53 @@ header {
     transition-duration: 0.01ms !important;
   }
 }
+.email-signup-only-card {
+  margin-top: 10px;
+}
+
+.email-signup-only-accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.email-signup-only-account-item {
+  border: 1px solid var(--border-color, #d7dce3);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--card-bg, #fff);
+}
+
+.email-signup-only-account-main,
+.email-signup-only-account-meta,
+.email-signup-only-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.email-signup-only-account-main {
+  justify-content: space-between;
+}
+
+.email-signup-only-email {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.email-signup-only-account-meta {
+  margin-top: 6px;
+  color: var(--muted-text, #667085);
+  font-size: 12px;
+}
+
+.email-signup-only-account-actions {
+  margin-top: 8px;
+}
+
+.data-row.is-disabled {
+  opacity: 0.55;
+}

@@ -37,6 +37,8 @@ if (document.documentElement.getAttribute(SIGNUP_PAGE_LISTENER_SENTINEL) !== '1'
       || message.type === 'RESEND_PHONE_VERIFICATION_CODE'
       || message.type === 'CHECK_PHONE_RESEND_ERROR'
       || message.type === 'RETURN_TO_ADD_PHONE'
+      || message.type === 'EMAIL_SIGNUP_ONLY_LOGIN_FOR_TOKEN'
+      || message.type === 'EMAIL_SIGNUP_ONLY_SUBMIT_LOGIN_CODE'
       || message.type === 'ENSURE_SIGNUP_ENTRY_READY'
       || message.type === 'ENSURE_SIGNUP_PHONE_ENTRY_READY'
       || message.type === 'ENSURE_SIGNUP_PASSWORD_PAGE_READY'
@@ -143,6 +145,10 @@ async function handleCommand(message) {
       return phoneAuthHelpers.checkPhoneResendError();
     case 'RETURN_TO_ADD_PHONE':
       return await phoneAuthHelpers.returnToAddPhone();
+    case 'EMAIL_SIGNUP_ONLY_LOGIN_FOR_TOKEN':
+      return await emailSignupOnlyLoginForToken(message.payload);
+    case 'EMAIL_SIGNUP_ONLY_SUBMIT_LOGIN_CODE':
+      return await emailSignupOnlySubmitLoginCode(message.payload);
     case 'ENSURE_SIGNUP_ENTRY_READY':
       return await ensureSignupEntryReady();
     case 'ENSURE_SIGNUP_PHONE_ENTRY_READY':
@@ -6104,6 +6110,202 @@ async function step6_login(payload) {
   throw new Error(`无法识别当前登录页面状态。URL: ${snapshot?.url || location.href}`);
 }
 
+async function emailSignupOnlyLoginForToken(payload = {}) {
+  const email = String(payload.email || '').trim();
+  const password = String(payload.password || '').trim();
+  if (!email) throw new Error('仅注册账号登录缺少邮箱。');
+  if (!password) throw new Error('仅注册账号登录缺少密码。');
+
+  const start = Date.now();
+  let snapshot = normalizeStep6Snapshot(await waitForKnownLoginAuthState(15000));
+
+  while (Date.now() - start < 90000) {
+    throwIfStopped();
+
+    if (isLikelyLoggedInChatgptHomeUrl()) {
+      return {
+        ok: true,
+        loginComplete: true,
+        state: 'logged_in_home',
+        url: location.href,
+      };
+    }
+
+    snapshot = normalizeStep6Snapshot(inspectLoginAuthState());
+    if (snapshot.state === 'verification_page') {
+      return {
+        ok: true,
+        loginComplete: false,
+        state: 'verification_page',
+        loginVerificationRequestedAt: Date.now(),
+        displayedEmail: getLoginVerificationDisplayedEmail(),
+        url: location.href,
+      };
+    }
+
+    if (snapshot.state === 'email_page' || snapshot.state === 'entry_page') {
+      if (snapshot.state === 'entry_page') {
+        const trigger = snapshot.loginEntryTrigger || findLoginEntryTrigger();
+        if (!trigger) {
+          throw new Error('仅注册账号登录页未找到登录入口。URL: ' + location.href);
+        }
+        await humanPause(350, 900);
+        simulateClick(trigger);
+        await sleep(1200);
+        continue;
+      }
+
+      const emailInput = snapshot.emailInput || getLoginEmailInput();
+      if (!emailInput) {
+        throw new Error('仅注册账号登录页未找到邮箱输入框。URL: ' + location.href);
+      }
+      fillInput(emailInput, email);
+      const submitButton = snapshot.submitButton || getLoginSubmitButton({ allowDisabled: true });
+      if (!submitButton || !isActionEnabled(submitButton)) {
+        throw new Error('仅注册账号登录页未找到可点击的邮箱继续按钮。URL: ' + location.href);
+      }
+      await humanPause(350, 900);
+      await triggerLoginSubmitAction(submitButton, emailInput);
+      await sleep(1200);
+      continue;
+    }
+
+    if (snapshot.state === 'password_page') {
+      const passwordInput = snapshot.passwordInput || getLoginPasswordInput();
+      if (!passwordInput) {
+        throw new Error('仅注册账号登录页未找到密码输入框。URL: ' + location.href);
+      }
+      fillInput(passwordInput, password);
+      const submitButton = snapshot.submitButton || getLoginSubmitButton({ allowDisabled: true });
+      if (!submitButton || !isActionEnabled(submitButton)) {
+        throw new Error('仅注册账号登录页未找到可点击的密码继续按钮。URL: ' + location.href);
+      }
+      await humanPause(350, 900);
+      await triggerLoginSubmitAction(submitButton, passwordInput);
+      await sleep(1200);
+      continue;
+    }
+
+    if (snapshot.state === 'login_timeout_error_page') {
+      const transition = await createStep6LoginTimeoutRecoveryTransition(
+        'email_signup_only_login_timeout',
+        snapshot,
+        '仅注册账号登录进入超时报错页。',
+        {
+          visibleStep: 0,
+          loginVerificationRequestedAt: null,
+          via: 'email_signup_only_login_timeout_recovered',
+        }
+      );
+      if (transition.action === 'done') {
+        snapshot = normalizeStep6Snapshot(inspectLoginAuthState());
+        continue;
+      }
+      if (transition.snapshot) {
+        snapshot = normalizeStep6Snapshot(transition.snapshot);
+        continue;
+      }
+      if (transition.result?.error) {
+        throw new Error(transition.result.error);
+      }
+      await sleep(800);
+      continue;
+    }
+
+    if (snapshot.state === 'oauth_consent_page' || snapshot.state === 'add_email_page' || snapshot.state === 'add_phone_page') {
+      throw new Error(`仅注册账号获取 Token 走错入口：当前进入 ${getLoginAuthStateLabel(snapshot)}。请不要使用 OAuth 授权链接获取 Token。URL: ${snapshot.url || location.href}`);
+    }
+
+    await sleep(500);
+  }
+
+  throw new Error(`仅注册账号登录等待超时。当前状态：${getLoginAuthStateLabel(snapshot)}。URL: ${snapshot?.url || location.href}`);
+}
+
+async function waitForEmailSignupOnlyLoginComplete(timeout = 60000) {
+  const startedAt = Date.now();
+  let lastState = inspectLoginAuthState();
+  while (Date.now() - startedAt < timeout) {
+    throwIfStopped();
+    if (isLikelyLoggedInChatgptHomeUrl()) {
+      return { success: true, loggedIn: true, url: location.href };
+    }
+    lastState = inspectLoginAuthState();
+    if (lastState.state === 'verification_page') {
+      return {
+        invalidCode: true,
+        errorText: getVerificationErrorText() || '提交后仍停留在登录验证码页面，准备重新获取验证码。',
+        url: location.href,
+      };
+    }
+    if (lastState.state === 'oauth_consent_page' || lastState.state === 'add_email_page' || lastState.state === 'add_phone_page') {
+      throw new Error(`仅注册账号登录验证码提交后进入了非 ChatGPT 登录态页面：${getLoginAuthStateLabel(lastState)}。URL: ${lastState.url || location.href}`);
+    }
+    const errorText = getVerificationErrorText();
+    if (errorText) {
+      return { invalidCode: true, errorText, url: location.href };
+    }
+    await sleep(250);
+  }
+  throw new Error(`仅注册账号登录验证码提交后等待登录态超时。当前状态：${getLoginAuthStateLabel(lastState)}。URL: ${lastState?.url || location.href}`);
+}
+
+async function emailSignupOnlySubmitLoginCode(payload = {}) {
+  const code = String(payload.code || '').trim();
+  if (!code) throw new Error('未提供登录验证码。');
+
+  if (isLikelyLoggedInChatgptHomeUrl()) {
+    return { success: true, loggedIn: true, alreadyAdvanced: true, url: location.href };
+  }
+
+  const snapshot = normalizeStep6Snapshot(await waitForKnownLoginAuthState(15000));
+  if (snapshot.state !== 'verification_page') {
+    throw new Error(`仅注册账号当前未进入登录验证码页。当前状态：${getLoginAuthStateLabel(snapshot)}。URL: ${snapshot.url || location.href}`);
+  }
+
+  const verificationTarget = await waitForVerificationCodeTarget(10000);
+  let codeInput = null;
+  let splitInputs = null;
+  if (verificationTarget.type === 'split') {
+    splitInputs = verificationTarget.elements;
+  } else {
+    codeInput = verificationTarget.element;
+  }
+
+  if (splitInputs?.length >= 6) {
+    for (let i = 0; i < 6 && i < splitInputs.length; i += 1) {
+      const targetInput = splitInputs[i];
+      try {
+        targetInput.focus?.();
+      } catch {}
+      fillInput(targetInput, code[i]);
+      try {
+        targetInput.dispatchEvent(new KeyboardEvent('keyup', { key: code[i], bubbles: true }));
+      } catch {}
+      await sleep(100);
+    }
+    await waitForSplitVerificationInputsFilled(splitInputs, code, 2500);
+    const submitButton = await waitForVerificationSubmitButton(splitInputs[0], 2000).catch(() => null);
+    if (submitButton) {
+      await humanPause(350, 900);
+      simulateClick(submitButton);
+    }
+    return await waitForEmailSignupOnlyLoginComplete();
+  }
+
+  if (!codeInput) {
+    throw new Error('仅注册账号登录验证码页未找到验证码输入框。URL: ' + location.href);
+  }
+  fillInput(codeInput, code);
+  await sleep(500);
+  const submitButton = await waitForVerificationSubmitButton(codeInput, 5000).catch(() => null);
+  if (submitButton) {
+    await humanPause(350, 900);
+    simulateClick(submitButton);
+  }
+  return await waitForEmailSignupOnlyLoginComplete();
+}
+
 async function waitForAddEmailPageReady(timeout = 15000) {
   const start = Date.now();
   let sawAddEmailPage = false;
@@ -6437,6 +6639,7 @@ function getStep5DirectCompletionPayload({ isAgeMode = false, navigationStarted 
   const payload = {
     profileSubmitted: true,
     postSubmitChecked: true,
+    postSubmitConfirmed: true,
   };
   if (isAgeMode) {
     payload.ageMode = true;
@@ -6446,11 +6649,34 @@ function getStep5DirectCompletionPayload({ isAgeMode = false, navigationStarted 
   }
   if (outcome?.state) {
     payload.outcome = outcome.state;
+    payload.postSubmitState = outcome.state;
   }
   if (outcome?.url) {
     payload.url = outcome.url;
+    payload.postSubmitUrl = outcome.url;
   }
   return payload;
+}
+
+function isStep5PostSubmitHomeUrl(rawUrl = location.href) {
+  const url = String(rawUrl || '').trim();
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.toLowerCase() === 'chatgpt.com'
+      && parsed.pathname === '/'
+      && !parsed.search
+      && !parsed.hash;
+  } catch {
+    return false;
+  }
+}
+
+function shouldStep5WaitForPostSubmitInContent(payload = {}) {
+  return payload?.waitForPostSubmitInContent !== false;
 }
 
 function isCombinedSignupVerificationProfilePage() {
@@ -7121,6 +7347,17 @@ async function step5_fillNameBirthday(payload) {
   await performOperationWithDelay({ stepKey: 'fill-profile', kind: 'submit', label: 'submit-profile' }, async () => {
     simulateClick(completeBtn);
   });
+
+  if (!shouldStep5WaitForPostSubmitInContent(payload)) {
+    cleanupNavigationReporter();
+    log('步骤 5：已点击“完成帐户创建”，交由后台检测页面是否回到 ChatGPT 首页。');
+    return {
+      submitted: true,
+      pendingPostSubmitConfirmation: true,
+      postSubmitUrl: location.href,
+    };
+  }
+
   log('步骤 5：已点击“完成帐户创建”，正在等待页面跳转、重试页或提交结果。');
 
   try {

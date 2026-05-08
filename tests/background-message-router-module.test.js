@@ -332,6 +332,45 @@ test('SAVE_SETTING re-resolves signup method when panel mode changes', async () 
   assert.equal(state.signupMethod, 'email');
 });
 
+test('message router routes email-signup-only token login by account id', async () => {
+  const source = fs.readFileSync('background/message-router.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundMessageRouter;`)(globalScope);
+  const calls = [];
+  let latestState = {
+    emailSignupOnlyAccounts: [
+      { id: 'acc-1', email: 'user@example.com', accessToken: 'new-token' },
+    ],
+  };
+
+  const router = api.createMessageRouter({
+    addLog: async () => {},
+    broadcastDataUpdate: () => {},
+    clearStopRequest: () => {},
+    ensureManualInteractionAllowed: async (label) => calls.push(['allowed', label]),
+    getState: async () => latestState,
+    isAutoRunLockedState: () => false,
+    loginEmailSignupOnlyAccountForToken: async (accountId) => {
+      calls.push(['login', accountId]);
+      return latestState.emailSignupOnlyAccounts[0];
+    },
+  });
+
+  const response = await router.handleMessage({
+    type: 'LOGIN_EMAIL_SIGNUP_ONLY_ACCOUNT_FOR_TOKEN',
+    source: 'sidepanel',
+    payload: { accountId: 'acc-1' },
+  });
+
+  assert.equal(response.ok, true);
+  assert.deepStrictEqual(calls, [
+    ['allowed', '登录仅注册账号获取 Token'],
+    ['login', 'acc-1'],
+  ]);
+  assert.equal(response.account.email, 'user@example.com');
+  assert.equal(response.emailSignupOnlyAccounts[0].accessToken, 'new-token');
+});
+
 test('SAVE_SETTING applies shared mode-switch normalization before persisting incompatible capability flags', async () => {
   const source = fs.readFileSync('background/message-router.js', 'utf8');
   const globalScope = { console };

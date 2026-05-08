@@ -667,6 +667,74 @@ function getMailItemText(item) {
   ].join(' ');
 }
 
+function isLikelyMailDetailNode(node) {
+  if (!node || !isVisibleNode(node) || isMailItemNode(node)) {
+    return false;
+  }
+  const text = normalizeNodeText(node.innerText || node.textContent || '');
+  if (!text || text.length < 20) {
+    return false;
+  }
+  if (!/(?:openai|chatgpt|验证码|verification|code)/i.test(text)) {
+    return false;
+  }
+  const rect = typeof node.getBoundingClientRect === 'function'
+    ? node.getBoundingClientRect()
+    : null;
+  if (rect && (rect.width <= 0 || rect.height <= 0)) {
+    return false;
+  }
+  return true;
+}
+
+function getMailDetailTextFromPage() {
+  const detailSelectors = [
+    '.mail-detail',
+    '.mailDetail',
+    '[class*="mail-detail"]',
+    '[class*="MailDetail"]',
+    '[class*="mailDetail"]',
+    '.letter-detail',
+    '[class*="letter-detail"]',
+    '[class*="LetterDetail"]',
+    '.mail-content-detail',
+    '.mail-content-body',
+    '.mail-body',
+    '.message-body',
+    '[class*="mail-content"]',
+    '[class*="mailBody"]',
+    '[class*="messageBody"]',
+    '[class*="content"]',
+    'article',
+    'main',
+  ];
+
+  const candidates = [];
+  for (const selector of detailSelectors) {
+    for (const node of Array.from(document.querySelectorAll(selector))) {
+      if (!isLikelyMailDetailNode(node)) {
+        continue;
+      }
+      candidates.push(node);
+    }
+  }
+
+  if (!candidates.length) {
+    return normalizeNodeText(document.body?.textContent || '');
+  }
+
+  candidates.sort((left, right) => {
+    const leftText = normalizeNodeText(left.innerText || left.textContent || '');
+    const rightText = normalizeNodeText(right.innerText || right.textContent || '');
+    const leftStrict = extractStrictChatGPTVerificationCode(leftText) ? 1 : 0;
+    const rightStrict = extractStrictChatGPTVerificationCode(rightText) ? 1 : 0;
+    if (leftStrict !== rightStrict) return rightStrict - leftStrict;
+    return rightText.length - leftText.length;
+  });
+
+  return normalizeNodeText(candidates[0]?.innerText || candidates[0]?.textContent || '');
+}
+
 function getMailItemTimeText(item) {
   const timeEl = item?.querySelector('.date-time-text, [class*="date-time"], [class*="time"], td.time');
   return normalizeNodeText(timeEl?.textContent || '');
@@ -1056,7 +1124,7 @@ async function openMailAndGetMessageText(item) {
   simulateClick(item);
   try {
     await sleepRandom(1200, 2200);
-    return document.body?.textContent || '';
+    return getMailDetailTextFromPage();
   } finally {
     await returnToInbox();
   }
@@ -1082,7 +1150,7 @@ async function openMailAndDeleteAfterRead(item, step) {
   simulateClick(item);
   try {
     await sleepRandom(1200, 2200);
-    return document.body?.textContent || '';
+    return getMailDetailTextFromPage();
   } finally {
     await deleteCurrentMailboxEmail(step);
     await returnToInbox();
@@ -1377,6 +1445,7 @@ async function handlePollEmail(step, payload) {
         const candidateCode = bodyCode || previewCode;
 
         if (!candidateCode) {
+          log(`步骤 ${step}：已打开匹配邮件，但正文未识别到验证码，继续等待下一封。`, 'info');
           continue;
         }
 
@@ -1391,9 +1460,8 @@ async function handlePollEmail(step, payload) {
 
         seenCodes.add(candidateCode);
         persistSeenCodes();
-        const source = bodyCode ? '邮件正文' : '邮件预览';
         const timeLabel = itemTimestamp ? `，时间：${new Date(itemTimestamp).toLocaleString('zh-CN', { hour12: false })}` : '';
-        log(`步骤 ${step}：已找到验证码：${candidateCode}（来源：${source}${timeLabel}）`, 'ok');
+        log(`步骤 ${step}：已找到验证码：${candidateCode}（来源：邮件正文${timeLabel}）`, 'ok');
         return { ok: true, code: candidateCode, emailTimestamp: Date.now() };
       }
     }

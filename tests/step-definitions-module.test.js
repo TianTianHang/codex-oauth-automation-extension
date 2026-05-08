@@ -22,6 +22,7 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
   });
   const goPaySteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'gopay' });
   const gpcSteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'gpc-helper' });
+  const emailSignupOnlySteps = api.getSteps({ emailSignupOnlyModeEnabled: true, plusModeEnabled: true, signupMethod: 'phone' });
 
   assert.equal(Array.isArray(steps), true);
   assert.equal(steps.length, 11);
@@ -208,6 +209,23 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
   assert.equal(api.getLastStepId({ plusModeEnabled: true, plusPaymentMethod: 'gpc-helper' }), 14);
   assert.equal(gpcSteps[5].title, '创建 GPC 订单');
   assert.equal(gpcSteps[6].title, '等待 GPC 任务完成');
+
+  assert.deepStrictEqual(
+    emailSignupOnlySteps.map((step) => step.key),
+    [
+      'open-chatgpt',
+      'submit-signup-email',
+      'fill-password',
+      'fetch-signup-code',
+      'fill-profile',
+      'extract-access-token',
+    ]
+  );
+  assert.deepStrictEqual(api.getStepIds({ emailSignupOnlyModeEnabled: true }), [1, 2, 3, 4, 5, 6]);
+  assert.equal(api.getLastStepId({ emailSignupOnlyModeEnabled: true }), 6);
+  assert.equal(emailSignupOnlySteps[1].title, '注册并输入邮箱');
+  assert.equal(emailSignupOnlySteps[3].title, '获取注册验证码');
+  assert.equal(emailSignupOnlySteps[5].title, '获取 Access Token');
 });
 
 test('sidepanel html loads shared step definitions before sidepanel bootstrap', () => {
@@ -223,6 +241,7 @@ test('sidepanel html loads shared step definitions before sidepanel bootstrap', 
 test('sidepanel html exposes Plus mode, PayPal, and GoPay settings', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
   assert.match(html, /id="input-plus-mode-enabled"/);
+  assert.match(html, /id="input-email-signup-only-mode-enabled"/);
   assert.match(html, /id="select-plus-payment-method"/);
   assert.match(html, /id="select-paypal-account"/);
   assert.match(html, /id="btn-add-paypal-account"/);

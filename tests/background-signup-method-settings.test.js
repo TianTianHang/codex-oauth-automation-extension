@@ -65,6 +65,7 @@ async function getState() { return { ...state }; }
 async function setState(updates) { state = { ...state, ...updates }; }
 async function addLog(message, level = 'info') { logs.push({ message, level }); }
 ${extractFunction('normalizeSignupMethod')}
+${extractFunction('isEmailSignupOnlyModeState')}
 ${extractFunction('canUsePhoneSignup')}
 ${extractFunction('resolveSignupMethod')}
 ${extractFunction('ensureResolvedSignupMethodForRun')}
@@ -80,6 +81,7 @@ return {
   assert.equal(api.resolveSignupMethod({ signupMethod: 'phone', phoneVerificationEnabled: true }), 'phone');
   assert.equal(api.resolveSignupMethod({ signupMethod: 'phone', phoneVerificationEnabled: false }), 'email');
   assert.equal(api.resolveSignupMethod({ signupMethod: 'phone', phoneVerificationEnabled: true, plusModeEnabled: true }), 'email');
+  assert.equal(api.resolveSignupMethod({ signupMethod: 'phone', phoneVerificationEnabled: true, emailSignupOnlyModeEnabled: true }), 'email');
   assert.equal(api.resolveSignupMethod({ signupMethod: 'email', resolvedSignupMethod: 'phone', phoneVerificationEnabled: false }), 'phone');
 
   assert.equal(await api.ensureResolvedSignupMethodForRun(), 'phone');
@@ -161,6 +163,7 @@ const self = {
 ${extractFunction('isPlusModeState')}
 ${extractFunction('normalizePlusPaymentMethod')}
 ${extractFunction('normalizeSignupMethod')}
+${extractFunction('isEmailSignupOnlyModeState')}
 ${extractFunction('getSignupMethodForStepDefinitions')}
 ${extractFunction('getStepDefinitionsForState')}
 return {
@@ -178,6 +181,7 @@ return {
 
   assert.deepEqual(api.getCaptured(), [{
     activeFlowId: 'openai',
+    emailSignupOnlyModeEnabled: false,
     plusModeEnabled: true,
     plusPaymentMethod: 'gopay',
     signupMethod: 'phone',

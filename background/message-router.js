@@ -53,6 +53,7 @@
       getStepDefinitionForState,
       getStepIdsForState,
       getLastStepIdForState,
+      loginEmailSignupOnlyAccountForToken,
       normalizeSignupMethod = (value = '') => String(value || '').trim().toLowerCase() === 'phone' ? 'phone' : 'email',
       canUsePhoneSignup = (state = {}) => {
         const rootScope = typeof self !== 'undefined' ? self : globalThis;
@@ -1323,12 +1324,17 @@
           if (
             Object.prototype.hasOwnProperty.call(updates, 'phoneVerificationEnabled')
             || Object.prototype.hasOwnProperty.call(updates, 'plusModeEnabled')
+            || Object.prototype.hasOwnProperty.call(updates, 'emailSignupOnlyModeEnabled')
             || Object.prototype.hasOwnProperty.call(updates, 'signupMethod')
             || Object.prototype.hasOwnProperty.call(updates, 'panelMode')
             || Object.prototype.hasOwnProperty.call(updates, 'activeFlowId')
             || Object.prototype.hasOwnProperty.call(updates, 'contributionMode')
           ) {
             updates.signupMethod = resolveSignupMethod(nextSignupState);
+          }
+          if (updates.emailSignupOnlyModeEnabled) {
+            updates.plusModeEnabled = false;
+            updates.signupMethod = 'email';
           }
           const nextPersistedSignupMethod = Object.prototype.hasOwnProperty.call(updates, 'signupMethod')
             ? updates.signupMethod
@@ -1338,6 +1344,8 @@
           }
           const modeChanged = Object.prototype.hasOwnProperty.call(updates, 'plusModeEnabled')
             && Boolean(currentState?.plusModeEnabled) !== Boolean(updates.plusModeEnabled);
+          const emailSignupOnlyModeChanged = Object.prototype.hasOwnProperty.call(updates, 'emailSignupOnlyModeEnabled')
+            && Boolean(currentState?.emailSignupOnlyModeEnabled) !== Boolean(updates.emailSignupOnlyModeEnabled);
           const plusPaymentChanged = Object.prototype.hasOwnProperty.call(updates, 'plusPaymentMethod')
             && normalizePlusPaymentMethodForDisplay(currentState?.plusPaymentMethod || 'paypal')
               !== normalizePlusPaymentMethodForDisplay(updates.plusPaymentMethod || 'paypal');
@@ -1347,6 +1355,7 @@
             ? Boolean(updates.plusModeEnabled)
             : Boolean(currentState?.plusModeEnabled);
           const stepModeChanged = modeChanged
+            || emailSignupOnlyModeChanged
             || (nextPlusModeEnabled && plusPaymentChanged)
             || phoneSignupReloginAfterBindEmailChanged;
           const oauthFlowTimeoutDisabled = Object.prototype.hasOwnProperty.call(updates, 'oauthFlowTimeoutEnabled')
@@ -1422,7 +1431,14 @@
           if (Object.keys(stateUpdates).length > 0 && typeof broadcastDataUpdate === 'function') {
             broadcastDataUpdate(stateUpdates);
           }
-          if (modeChanged) {
+          if (emailSignupOnlyModeChanged) {
+            await addLog(
+              Boolean(updates.emailSignupOnlyModeEnabled)
+                ? '仅邮箱注册模式已开启，流程将在注册资料完成后停止并保存账号。'
+                : '仅邮箱注册模式已关闭，已恢复当前注册授权步骤。',
+              'info'
+            );
+          } else if (modeChanged) {
             const selectedPlusPaymentMethod = getPlusPaymentMethodLabel(
               stateUpdates.plusPaymentMethod ?? currentState?.plusPaymentMethod ?? 'paypal'
             );
@@ -1502,6 +1518,35 @@
             skipExitProbe: message.payload?.skipExitProbe,
           });
           return { ok: true, ...result };
+        }
+
+        case 'CLEAR_EMAIL_SIGNUP_ONLY_ACCOUNTS': {
+          await setPersistentSettings({ emailSignupOnlyAccounts: [] });
+          await setState({ emailSignupOnlyAccounts: [] });
+          broadcastDataUpdate({ emailSignupOnlyAccounts: [] });
+          await addLog('仅注册账号列表已清空。', 'warn');
+          return { ok: true };
+        }
+
+        case 'LOGIN_EMAIL_SIGNUP_ONLY_ACCOUNT_FOR_TOKEN': {
+          const state = await getState();
+          if (isAutoRunLockedState(state)) {
+            throw new Error('自动流程运行中，当前不能登录仅注册账号获取 Token。');
+          }
+          if (typeof ensureManualInteractionAllowed === 'function') {
+            await ensureManualInteractionAllowed('登录仅注册账号获取 Token');
+          }
+          if (typeof loginEmailSignupOnlyAccountForToken !== 'function') {
+            throw new Error('仅注册账号登录获取 Token 能力尚未接入。');
+          }
+          const accountId = String(message.payload?.accountId || '').trim();
+          const account = await loginEmailSignupOnlyAccountForToken(accountId);
+          const latestState = await getState();
+          return {
+            ok: true,
+            account,
+            emailSignupOnlyAccounts: latestState.emailSignupOnlyAccounts || [],
+          };
         }
 
         case 'PROBE_IP_PROXY_EXIT': {
