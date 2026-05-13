@@ -535,6 +535,7 @@ const DEFAULT_PHONE_SIGNUP_RELOGIN_AFTER_BIND_EMAIL_ENABLED = false;
 const PHONE_SIGNUP_REUSE_LOCK_TITLE = '手机号注册流程不使用号码复用，切回邮箱注册后会恢复原设置';
 let latestState = null;
 let currentPlusModeEnabled = false;
+let currentEmailSignupOnlyModeEnabled = false;
 let currentPlusPaymentMethod = DEFAULT_PLUS_PAYMENT_METHOD;
 let currentSignupMethod = DEFAULT_SIGNUP_METHOD;
 let currentPhoneSignupReloginAfterBindEmailEnabled = DEFAULT_PHONE_SIGNUP_RELOGIN_AFTER_BIND_EMAIL_ENABLED;
@@ -941,6 +942,7 @@ function rebuildStepDefinitionState(plusModeEnabled = false, options = {}) {
     ? currentPhoneSignupReloginAfterBindEmailEnabled
     : Boolean(options.phoneSignupReloginAfterBindEmailEnabled ?? currentPhoneSignupReloginAfterBindEmailEnabled);
   currentPlusPaymentMethod = normalizePlusPaymentMethod(rawPaymentMethod);
+  currentEmailSignupOnlyModeEnabled = Boolean(emailSignupOnlyModeEnabled);
   currentSignupMethod = normalizeSignupMethod(rawSignupMethod);
   currentPhoneSignupReloginAfterBindEmailEnabled = phoneSignupReloginAfterBindEmailEnabled;
   stepDefinitions = getStepDefinitionsForMode(currentPlusModeEnabled, {
@@ -9217,7 +9219,7 @@ function syncStepDefinitionsForMode(plusModeEnabled = false, plusPaymentMethodOr
   const paymentTitleChanged = Boolean(nextPlusModeEnabled && currentPaymentStep && nextPaymentTitle && currentPaymentStep.title !== nextPaymentTitle);
   const shouldRender = Boolean(options.render)
     || nextPlusModeEnabled !== currentPlusModeEnabled
-    || nextEmailSignupOnlyModeEnabled !== Boolean(latestState?.emailSignupOnlyModeEnabled)
+    || nextEmailSignupOnlyModeEnabled !== currentEmailSignupOnlyModeEnabled
     || nextPaymentMethod !== currentPlusPaymentMethod
     || nextSignupMethod !== currentSignupMethod
     || nextPhoneSignupReloginAfterBindEmailEnabled !== currentPhoneSignupReloginAfterBindEmailEnabled
@@ -15384,6 +15386,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       if (
         message.payload.plusModeEnabled !== undefined
+        || message.payload.emailSignupOnlyModeEnabled !== undefined
         || message.payload.plusPaymentMethod !== undefined
         || message.payload.gopayHelperPhoneMode !== undefined
         || message.payload.gopayHelperAutoModeEnabled !== undefined
@@ -15404,6 +15407,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           {
             render: true,
             signupMethod: stepDefinitionState.signupMethod,
+            emailSignupOnlyModeEnabled: Boolean(latestState?.emailSignupOnlyModeEnabled),
           }
         );
         updatePlusModeUI();

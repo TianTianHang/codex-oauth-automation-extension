@@ -81,9 +81,11 @@ const window = {
   },
 };
 let currentPlusModeEnabled = false;
+let currentEmailSignupOnlyModeEnabled = false;
 let currentPlusPaymentMethod = 'paypal';
 let currentSignupMethod = 'email';
 let currentPhoneSignupReloginAfterBindEmailEnabled = false;
+const SIGNUP_METHOD_EMAIL = 'email';
 const DEFAULT_SIGNUP_METHOD = 'email';
 let stepDefinitions = [];
 let STEP_IDS = [];
@@ -107,9 +109,76 @@ return {
   assert.deepEqual(api.getStepIds(), [7]);
   assert.deepEqual(api.calls[0], {
     type: 'getSteps',
-    options: { activeFlowId: 'openai', plusModeEnabled: true, plusPaymentMethod: 'gopay', signupMethod: 'email', phoneSignupReloginAfterBindEmailEnabled: false },
+    options: { activeFlowId: 'openai', plusModeEnabled: true, plusPaymentMethod: 'gopay', signupMethod: 'email', emailSignupOnlyModeEnabled: false, phoneSignupReloginAfterBindEmailEnabled: false },
   });
   assert.deepEqual(api.calls[1], { type: 'render', stepIds: [7] });
+});
+
+test('sidepanel rebuilds steps when email signup only state was merged before rendering', () => {
+  const bundle = [
+    extractFunction('normalizeSignupMethod'),
+    extractFunction('normalizePlusPaymentMethod'),
+    extractFunction('getStepDefinitionsForMode'),
+    extractFunction('rebuildStepDefinitionState'),
+    extractFunction('syncStepDefinitionsForMode'),
+  ].join('\n');
+
+  const api = new Function(`
+const calls = [];
+const window = {
+  MultiPageStepDefinitions: {
+    getSteps(options) {
+      calls.push({ type: 'getSteps', options });
+      return options.emailSignupOnlyModeEnabled
+        ? [{ id: 1, order: 1 }, { id: 6, order: 6 }]
+        : [{ id: 1, order: 1 }, { id: 10, order: 10 }];
+    },
+  },
+};
+let latestState = { emailSignupOnlyModeEnabled: true };
+let currentPlusModeEnabled = false;
+let currentEmailSignupOnlyModeEnabled = false;
+let currentPlusPaymentMethod = 'paypal';
+let currentSignupMethod = 'email';
+let currentPhoneSignupReloginAfterBindEmailEnabled = false;
+const SIGNUP_METHOD_EMAIL = 'email';
+const DEFAULT_SIGNUP_METHOD = 'email';
+let stepDefinitions = [{ id: 1, order: 1 }, { id: 10, order: 10 }];
+let STEP_IDS = [1, 10];
+let STEP_DEFAULT_STATUSES = {};
+let SKIPPABLE_STEPS = new Set(STEP_IDS);
+function getSelectedPlusPaymentMethod() {
+  return 'paypal';
+}
+function renderStepsList() {
+  calls.push({ type: 'render', stepIds: [...STEP_IDS] });
+}
+${bundle}
+return {
+  calls,
+  syncStepDefinitionsForMode,
+  getStepIds: () => [...STEP_IDS],
+};
+`)();
+
+  api.syncStepDefinitionsForMode(false, {
+    emailSignupOnlyModeEnabled: true,
+    signupMethod: 'email',
+  });
+
+  assert.deepEqual(api.getStepIds(), [1, 6]);
+  assert.deepEqual(api.calls[0], {
+    type: 'getSteps',
+    options: {
+      activeFlowId: 'openai',
+      emailSignupOnlyModeEnabled: true,
+      phoneSignupReloginAfterBindEmailEnabled: false,
+      plusModeEnabled: false,
+      plusPaymentMethod: 'paypal',
+      signupMethod: 'email',
+    },
+  });
+  assert.deepEqual(api.calls[1], { type: 'render', stepIds: [1, 6] });
 });
 
 test('sidepanel normalizeSignupMethod stays independent from signup constants during bootstrap', () => {
@@ -207,7 +276,7 @@ const window = {
 };
 let latestState = { plusPaymentMethod: 'paypal' };
 const inputPlusModeEnabled = { checked: true };
-const rowPlusMode = { style: { display: '' } };
+const rowPlusMode = { style: { display: '' }, classList: { toggle() {} } };
 const selectPlusPaymentMethod = { value: 'paypal', style: { display: '' } };
 const rowPlusPaymentMethod = { style: { display: '' } };
 const rowPayPalAccount = { style: { display: '' } };
@@ -251,9 +320,11 @@ const window = {
   },
 };
 let currentPlusModeEnabled = false;
+let currentEmailSignupOnlyModeEnabled = false;
 let currentPlusPaymentMethod = 'paypal';
 let currentSignupMethod = 'email';
 let currentPhoneSignupReloginAfterBindEmailEnabled = false;
+const SIGNUP_METHOD_EMAIL = 'email';
 const DEFAULT_SIGNUP_METHOD = 'email';
 let stepDefinitions = [];
 let STEP_IDS = [];
@@ -277,7 +348,7 @@ return {
   assert.deepEqual(api.getStepIds(), [13]);
   assert.deepEqual(api.calls[0], {
     type: 'getSteps',
-    options: { activeFlowId: 'openai', plusModeEnabled: true, plusPaymentMethod: 'gpc-helper', signupMethod: 'email', phoneSignupReloginAfterBindEmailEnabled: false },
+    options: { activeFlowId: 'openai', plusModeEnabled: true, plusPaymentMethod: 'gpc-helper', signupMethod: 'email', emailSignupOnlyModeEnabled: false, phoneSignupReloginAfterBindEmailEnabled: false },
   });
 });
 
