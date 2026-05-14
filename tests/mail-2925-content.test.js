@@ -914,6 +914,10 @@ function simulateClick(node) {
 
 async function sleep() {}
 async function sleepRandom() {}
+async function waitForMailboxReady() {
+  const items = findMailItems();
+  return { ready: items.length > 0, items, empty: items.length === 0 };
+}
 const console = { warn() {} };
 const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
 

@@ -252,7 +252,8 @@ function isVisibleNode(node) {
 }
 
 function isMailItemNode(node) {
-  return Boolean(node?.closest?.(MAIL_ITEM_SELECTOR_GROUP));
+  const selector = typeof MAIL_ITEM_SELECTOR_GROUP === 'string' ? MAIL_ITEM_SELECTOR_GROUP : '.mail-item';
+  return Boolean(node?.closest?.(selector));
 }
 
 function resolveActionTarget(node) {
@@ -668,7 +669,10 @@ function getMailItemText(item) {
 }
 
 function isLikelyMailDetailNode(node) {
-  if (!node || !isVisibleNode(node) || isMailItemNode(node)) {
+  const visible = typeof isVisibleNode === 'function'
+    ? isVisibleNode(node)
+    : Boolean(node && !node.hidden);
+  if (!node || !visible || isMailItemNode(node)) {
     return false;
   }
   const text = normalizeNodeText(node.innerText || node.textContent || '');
@@ -710,12 +714,14 @@ function getMailDetailTextFromPage() {
   ];
 
   const candidates = [];
-  for (const selector of detailSelectors) {
-    for (const node of Array.from(document.querySelectorAll(selector))) {
-      if (!isLikelyMailDetailNode(node)) {
-        continue;
+  if (typeof document?.querySelectorAll === 'function') {
+    for (const selector of detailSelectors) {
+      for (const node of Array.from(document.querySelectorAll(selector))) {
+        if (!isLikelyMailDetailNode(node)) {
+          continue;
+        }
+        candidates.push(node);
       }
-      candidates.push(node);
     }
   }
 
@@ -827,6 +833,22 @@ function normalizeTargetEmailHints(hints = [], targetEmail = '') {
     }
   }
   return [...new Set(collected)];
+}
+
+function extractStrictChatGPTVerificationCode(text) {
+  const normalized = String(text || '');
+  const patterns = [
+    /your\s+(?:temporary\s+)?chatgpt\s+(?:(?:log-?in|login)\s+)?code\s+is[\s\S]{0,80}?(\d{6})/i,
+    /(?:chatgpt\s+log-?in\s+code|suspicious\s+log-?in)[\s\S]{0,200}?enter\s+this\s+code[\s\S]{0,80}?(\d{6})/i,
+    /enter\s+this\s+code[\s\S]{0,80}?(\d{6})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
 }
 
 function extractLegacyStrictVerificationCode(text) {

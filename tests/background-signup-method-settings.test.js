@@ -117,6 +117,7 @@ const self = {
 const SIGNUP_METHOD_EMAIL = 'email';
 const SIGNUP_METHOD_PHONE = 'phone';
 ${extractFunction('normalizeSignupMethod')}
+${extractFunction('isEmailSignupOnlyModeState')}
 ${extractFunction('canUsePhoneSignup')}
 ${extractFunction('resolveSignupMethod')}
 return {

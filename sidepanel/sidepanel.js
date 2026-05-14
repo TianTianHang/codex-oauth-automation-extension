@@ -8343,7 +8343,7 @@ function updatePlusModeUI() {
   if (inputPlusModeEnabled) {
     inputPlusModeEnabled.disabled = emailSignupOnlyModeEnabled || !supportsPlusMode;
   }
-  if (typeof rowPlusMode !== 'undefined' && rowPlusMode) {
+  if (typeof rowPlusMode !== 'undefined' && rowPlusMode?.classList?.toggle) {
     rowPlusMode.classList.toggle('is-disabled', emailSignupOnlyModeEnabled || !supportsPlusMode);
   }
   const method = enabled ? getSelectedPlusPaymentMethod() : defaultMethod;

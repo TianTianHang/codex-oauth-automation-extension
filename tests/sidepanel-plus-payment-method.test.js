@@ -109,7 +109,14 @@ return {
   assert.deepEqual(api.getStepIds(), [7]);
   assert.deepEqual(api.calls[0], {
     type: 'getSteps',
-    options: { activeFlowId: 'openai', plusModeEnabled: true, plusPaymentMethod: 'gopay', signupMethod: 'email', emailSignupOnlyModeEnabled: false, phoneSignupReloginAfterBindEmailEnabled: false },
+    options: {
+      activeFlowId: 'openai',
+      emailSignupOnlyModeEnabled: false,
+      phoneSignupReloginAfterBindEmailEnabled: false,
+      plusModeEnabled: true,
+      plusPaymentMethod: 'gopay',
+      signupMethod: 'email',
+    },
   });
   assert.deepEqual(api.calls[1], { type: 'render', stepIds: [7] });
 });
@@ -348,7 +355,14 @@ return {
   assert.deepEqual(api.getStepIds(), [13]);
   assert.deepEqual(api.calls[0], {
     type: 'getSteps',
-    options: { activeFlowId: 'openai', plusModeEnabled: true, plusPaymentMethod: 'gpc-helper', signupMethod: 'email', emailSignupOnlyModeEnabled: false, phoneSignupReloginAfterBindEmailEnabled: false },
+    options: {
+      activeFlowId: 'openai',
+      emailSignupOnlyModeEnabled: false,
+      phoneSignupReloginAfterBindEmailEnabled: false,
+      plusModeEnabled: true,
+      plusPaymentMethod: 'gpc-helper',
+      signupMethod: 'email',
+    },
   });
 });
 
