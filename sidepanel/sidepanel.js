@@ -307,6 +307,8 @@ const btnIcloudBulkDelete = document.getElementById('btn-icloud-bulk-delete');
 const emailSignupOnlyAccountsSection = document.getElementById('email-signup-only-accounts-section');
 const emailSignupOnlyAccountsSummary = document.getElementById('email-signup-only-accounts-summary');
 const emailSignupOnlyAccountsList = document.getElementById('email-signup-only-accounts-list');
+const emailSignupOnlyAccountsBody = document.getElementById('email-signup-only-accounts-body');
+const btnToggleEmailSignupOnlyAccounts = document.getElementById('btn-toggle-email-signup-only-accounts');
 const btnExportEmailSignupOnlyTokens = document.getElementById('btn-export-email-signup-only-tokens');
 const btnExportEmailSignupOnlyCredentials = document.getElementById('btn-export-email-signup-only-credentials');
 const btnClearEmailSignupOnlyAccounts = document.getElementById('btn-clear-email-signup-only-accounts');
@@ -2287,7 +2289,37 @@ function formatEmailSignupOnlyDate(timestamp) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
 
+function isEmailSignupOnlyAccountsCollapsed() {
+  return Boolean(emailSignupOnlyAccountsSection?.classList?.contains('is-collapsed'));
+}
+
+function setEmailSignupOnlyAccountsCollapsed(collapsed) {
+  if (!emailSignupOnlyAccountsSection) return;
+  emailSignupOnlyAccountsSection.classList.toggle('is-collapsed', Boolean(collapsed));
+  if (emailSignupOnlyAccountsBody) {
+    emailSignupOnlyAccountsBody.hidden = Boolean(collapsed);
+  }
+  if (btnToggleEmailSignupOnlyAccounts) {
+    btnToggleEmailSignupOnlyAccounts.textContent = collapsed ? '展开' : '收起';
+    btnToggleEmailSignupOnlyAccounts.setAttribute('aria-expanded', String(!collapsed));
+  }
+}
+
+function syncEmailSignupOnlyAccountsSectionVisibility() {
+  if (!emailSignupOnlyAccountsSection) return;
+  const visible = Boolean(
+    typeof inputEmailSignupOnlyModeEnabled !== 'undefined' && inputEmailSignupOnlyModeEnabled
+      ? inputEmailSignupOnlyModeEnabled.checked
+      : latestState?.emailSignupOnlyModeEnabled
+  );
+  emailSignupOnlyAccountsSection.hidden = !visible;
+  if (visible) {
+    setEmailSignupOnlyAccountsCollapsed(isEmailSignupOnlyAccountsCollapsed());
+  }
+}
+
 function renderEmailSignupOnlyAccounts() {
+  syncEmailSignupOnlyAccountsSectionVisibility();
   const accounts = getEmailSignupOnlyAccounts();
   const tokenCount = accounts.filter((account) => String(account.accessToken || '').trim()).length;
   if (emailSignupOnlyAccountsSummary) {
@@ -11922,6 +11954,10 @@ emailSignupOnlyAccountsList?.addEventListener('click', async (event) => {
   }
 });
 
+btnToggleEmailSignupOnlyAccounts?.addEventListener('click', () => {
+  setEmailSignupOnlyAccountsCollapsed(!isEmailSignupOnlyAccountsCollapsed());
+});
+
 btnExportEmailSignupOnlyTokens?.addEventListener('click', exportEmailSignupOnlyTokens);
 btnExportEmailSignupOnlyCredentials?.addEventListener('click', exportEmailSignupOnlyCredentials);
 btnClearEmailSignupOnlyAccounts?.addEventListener('click', async () => {
@@ -13228,6 +13264,7 @@ inputEmailSignupOnlyModeEnabled?.addEventListener('change', () => {
     emailSignupOnlyModeEnabled: Boolean(inputEmailSignupOnlyModeEnabled.checked),
     signupMethod: SIGNUP_METHOD_EMAIL,
   });
+  syncEmailSignupOnlyAccountsSectionVisibility();
   markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
 });
@@ -15359,6 +15396,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       if (message.payload.emailSignupOnlyModeEnabled !== undefined && inputEmailSignupOnlyModeEnabled) {
         inputEmailSignupOnlyModeEnabled.checked = Boolean(message.payload.emailSignupOnlyModeEnabled);
+        syncEmailSignupOnlyAccountsSectionVisibility();
       }
       if (message.payload.plusPaymentMethod !== undefined && selectPlusPaymentMethod) {
         selectPlusPaymentMethod.value = normalizePlusPaymentMethod(message.payload.plusPaymentMethod);

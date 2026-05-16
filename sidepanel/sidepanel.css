@@ -3505,6 +3505,13 @@ header {
   margin-top: 10px;
 }
 
+.email-signup-only-card.is-collapsed .email-signup-only-accounts-body,
+.email-signup-only-card.is-collapsed #btn-export-email-signup-only-tokens,
+.email-signup-only-card.is-collapsed #btn-export-email-signup-only-credentials,
+.email-signup-only-card.is-collapsed #btn-clear-email-signup-only-accounts {
+  display: none;
+}
+
 .email-signup-only-accounts-list {
   display: flex;
   flex-direction: column;

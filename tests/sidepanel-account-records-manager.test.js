@@ -151,9 +151,62 @@ test('sidepanel html contains account records overlay and manager script', () =>
   assert.match(html, /id="temp-email-domain-picker"/);
   assert.match(sidepanelJs, /data-email-signup-only-login-token/);
   assert.match(sidepanelJs, /LOGIN_EMAIL_SIGNUP_ONLY_ACCOUNT_FOR_TOKEN/);
+  assert.match(html, /id="btn-toggle-email-signup-only-accounts"/);
+  assert.match(html, /id="email-signup-only-accounts-body"/);
+  assert.match(html, /aria-controls="email-signup-only-accounts-body"/);
+  assert.match(sidepanelJs, /syncEmailSignupOnlyAccountsSectionVisibility/);
   assert.notEqual(managerIndex, -1);
   assert.notEqual(sidepanelIndex, -1);
   assert.ok(managerIndex < sidepanelIndex);
+});
+
+test('sidepanel email-only accounts section follows email-only mode and collapse state', () => {
+  const bundle = [
+    extractFunction('isEmailSignupOnlyAccountsCollapsed'),
+    extractFunction('setEmailSignupOnlyAccountsCollapsed'),
+    extractFunction('syncEmailSignupOnlyAccountsSectionVisibility'),
+  ].join('\n');
+
+  const api = new Function(`
+const emailSignupOnlyAccountsSection = {
+  hidden: false,
+  classList: (${createClassList.toString()})(),
+};
+const emailSignupOnlyAccountsBody = { hidden: false };
+const btnToggleEmailSignupOnlyAccounts = {
+  textContent: '',
+  attributes: {},
+  setAttribute(name, value) { this.attributes[name] = String(value); },
+};
+const inputEmailSignupOnlyModeEnabled = { checked: false };
+let latestState = { emailSignupOnlyModeEnabled: false };
+${bundle}
+return {
+  emailSignupOnlyAccountsSection,
+  emailSignupOnlyAccountsBody,
+  btnToggleEmailSignupOnlyAccounts,
+  inputEmailSignupOnlyModeEnabled,
+  setEmailSignupOnlyAccountsCollapsed,
+  syncEmailSignupOnlyAccountsSectionVisibility,
+};
+`)();
+
+  api.syncEmailSignupOnlyAccountsSectionVisibility();
+  assert.equal(api.emailSignupOnlyAccountsSection.hidden, true);
+
+  api.inputEmailSignupOnlyModeEnabled.checked = true;
+  api.syncEmailSignupOnlyAccountsSectionVisibility();
+  assert.equal(api.emailSignupOnlyAccountsSection.hidden, false);
+
+  api.setEmailSignupOnlyAccountsCollapsed(true);
+  assert.equal(api.emailSignupOnlyAccountsBody.hidden, true);
+  assert.equal(api.btnToggleEmailSignupOnlyAccounts.textContent, '展开');
+  assert.equal(api.btnToggleEmailSignupOnlyAccounts.attributes['aria-expanded'], 'false');
+
+  api.setEmailSignupOnlyAccountsCollapsed(false);
+  assert.equal(api.emailSignupOnlyAccountsBody.hidden, false);
+  assert.equal(api.btnToggleEmailSignupOnlyAccounts.textContent, '收起');
+  assert.equal(api.btnToggleEmailSignupOnlyAccounts.attributes['aria-expanded'], 'true');
 });
 
 test('sidepanel css keeps confirm modal above account records overlay', () => {

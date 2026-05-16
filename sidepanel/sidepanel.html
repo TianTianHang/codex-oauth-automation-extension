@@ -1694,12 +1694,16 @@
         <span id="email-signup-only-accounts-summary" class="data-value">暂无保存账号</span>
       </div>
       <div class="section-mini-actions">
+        <button id="btn-toggle-email-signup-only-accounts" class="btn btn-ghost btn-xs" type="button"
+          aria-expanded="true" aria-controls="email-signup-only-accounts-body">收起</button>
         <button id="btn-export-email-signup-only-tokens" class="btn btn-outline btn-xs" type="button">导出 Token</button>
         <button id="btn-export-email-signup-only-credentials" class="btn btn-outline btn-xs" type="button">导出账号密码</button>
         <button id="btn-clear-email-signup-only-accounts" class="btn btn-ghost btn-xs" type="button">清空</button>
       </div>
     </div>
-    <div id="email-signup-only-accounts-list" class="email-signup-only-accounts-list"></div>
+    <div id="email-signup-only-accounts-body" class="email-signup-only-accounts-body">
+      <div id="email-signup-only-accounts-list" class="email-signup-only-accounts-list"></div>
+    </div>
   </section>
 
   <section id="log-section">
