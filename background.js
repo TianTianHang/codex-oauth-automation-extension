@@ -10349,6 +10349,15 @@ async function completeNodeFromBackground(nodeId, payload = {}) {
   notifyNodeComplete(normalizedNodeId, payload);
 }
 
+async function completeStepFromBackground(step, payload = {}) {
+  const state = await getState();
+  const nodeId = getNodeIdByStepForState(step, state);
+  if (!nodeId) {
+    throw new Error(`completeStepFromBackground 未找到步骤 ${step} 对应的节点。`);
+  }
+  return completeNodeFromBackground(nodeId, payload);
+}
+
 async function appendManualAccountRunRecordIfNeeded(status, stateOverride = null, reason = '') {
   if (!accountRunHistoryHelpers?.appendAccountRunRecord) {
     return null;
